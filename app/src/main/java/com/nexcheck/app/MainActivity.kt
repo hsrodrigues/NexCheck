@@ -9,11 +9,14 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
@@ -21,6 +24,9 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import androidx.activity.enableEdgeToEdge
 import com.nexcheck.app.ui.theme.NexCheckTheme
+import com.nexcheck.app.ui.theme.ThemeMode
+import com.nexcheck.app.ui.theme.ThemePreference
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,11 +45,25 @@ class MainActivity : ComponentActivity() {
 
         FirebaseApp.initializeApp(this)
         setContent {
-            NexCheckTheme {
+            val context = LocalContext.current
+            var themeMode by remember { mutableStateOf(ThemePreference.load(context)) }
+            val darkTheme = when (themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            NexCheckTheme(darkTheme = darkTheme) {
                 // Surface define a cor de texto padrão (onBackground) para todo o app;
                 // sem ela, textos sem cor explícita saem pretos no tema escuro.
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    NexCheckApp()
+                    NexCheckApp(
+                        themeMode = themeMode,
+                        isDarkTheme = darkTheme,
+                        onThemeChange = { mode ->
+                            themeMode = mode
+                            ThemePreference.save(context, mode)
+                        }
+                    )
                 }
             }
         }
@@ -51,12 +71,53 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun NexCheckApp() {
+fun NexCheckApp(themeMode: ThemeMode, isDarkTheme: Boolean, onThemeChange: (ThemeMode) -> Unit) {
     val navController = rememberNavController()
     val auth = FirebaseAuth.getInstance()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-    val startDestination = if (auth.currentUser != null) "menu" else "login"
+    val startDestination = remember { if (auth.currentUser != null) "menu" else "login" }
+    var uid by remember { mutableStateOf(auth.currentUser?.uid) }
+    val profile = rememberUserProfile(uid)
+    val appVersion = remember {
+        try { context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0" } catch (e: Exception) { "1.0" }
+    }
 
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+    var showLogoutDialog by remember { mutableStateOf(false) }
+
+    fun closeDrawerThen(action: () -> Unit) {
+        scope.launch { drawerState.close() }
+        action()
+    }
+
+    fun openModule(route: String) {
+        // Abre o módulo por cima da tela inicial (voltar sempre retorna ao início)
+        navController.navigate(route) {
+            popUpTo("menu")
+            launchSingleTop = true
+        }
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        // Arrastar da borda só na tela inicial (não atrapalha assinaturas nem o gesto de voltar)
+        gesturesEnabled = currentRoute == "menu" || drawerState.isOpen,
+        drawerContent = {
+            AppDrawer(
+                profile = profile,
+                email = auth.currentUser?.email.orEmpty(),
+                appVersion = appVersion,
+                themeMode = themeMode,
+                onThemeChange = onThemeChange,
+                onNavigate = { route -> closeDrawerThen { openModule(route) } },
+                onHome = { closeDrawerThen { navController.popBackStack("menu", inclusive = false) } },
+                onLogout = { closeDrawerThen { showLogoutDialog = true } }
+            )
+        }
+    ) {
     // Transição: a tela nova desliza levemente da direita, a anterior esmaece
     NavHost(
         navController = navController,
@@ -71,6 +132,7 @@ fun NexCheckApp() {
         composable("login") {
             LoginScreen(
                 onLoginSuccess = {
+                    uid = auth.currentUser?.uid
                     navController.navigate("menu") {
                         popUpTo("login") { inclusive = true }
                     }
@@ -81,27 +143,12 @@ fun NexCheckApp() {
         // TELA 2: MENU PRINCIPAL
         composable("menu") {
             MainMenuScreen(
-                onNavigateToInspection = { tipoVeiculo ->
-                    navController.navigate("inspection/$tipoVeiculo")
-                },
-                onNavigateToHistory = { navController.navigate("history") },
-                onNavigateToPendencies = { navController.navigate("pendencies") },
-                onNavigateToSchedules = { navController.navigate("schedules") },
-                onNavigateToUserManagement = { navController.navigate("userManagement") },
-
-                onNavigateToSmokePendencies = { navController.navigate("smoke_pendencies") },
-                onNavigateToSmokeForm = { navController.navigate("smoke_form?placa=&empresa=") },
-                onNavigateToLogbooks = { navController.navigate("logbooks") },
-
-                // Rota para abrir a Lista de Ocorrências
-                onNavigateToIncidents = { navController.navigate("incidents") },
-
-                onLogout = {
-                    auth.signOut()
-                    navController.navigate("login") {
-                        popUpTo("menu") { inclusive = true }
-                    }
-                }
+                profile = profile,
+                appVersion = appVersion,
+                isDarkTheme = isDarkTheme,
+                onToggleTheme = { onThemeChange(if (isDarkTheme) ThemeMode.LIGHT else ThemeMode.DARK) },
+                onOpenDrawer = { scope.launch { drawerState.open() } },
+                onNavigate = { route -> openModule(route) }
             )
         }
 
@@ -229,5 +276,24 @@ fun NexCheckApp() {
         composable("incident_form") {
             IncidentFormScreen(onBack = { navController.popBackStack() })
         }
+    }
+    }
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null) },
+            title = { Text("Sair da conta?") },
+            text = { Text("Você precisará entrar novamente para usar o app.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showLogoutDialog = false
+                    auth.signOut()
+                    uid = null
+                    navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                }) { Text("Sair", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text("Cancelar") } }
+        )
     }
 }

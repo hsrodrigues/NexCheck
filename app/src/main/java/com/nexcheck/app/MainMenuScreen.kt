@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -12,9 +13,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.FactCheck
-import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,90 +27,27 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
 import com.nexcheck.app.ui.components.IconBadge
 import com.nexcheck.app.ui.components.NexCard
 import com.nexcheck.app.ui.components.SectionTitle
-import com.nexcheck.app.ui.theme.ModuleColors
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 
-private data class ModuleItem(
-    val title: String,
-    val description: String,
-    val icon: ImageVector,
-    val color: Color,
-    val onClick: () -> Unit
-)
-
 @Composable
 fun MainMenuScreen(
-    onNavigateToInspection: (String) -> Unit,
-    onNavigateToHistory: () -> Unit,
-    onNavigateToPendencies: () -> Unit,
-    onNavigateToSchedules: () -> Unit,
-    onNavigateToUserManagement: () -> Unit,
-    onNavigateToSmokePendencies: () -> Unit,
-    onNavigateToSmokeForm: () -> Unit,
-    onNavigateToLogbooks: () -> Unit,
-    onNavigateToIncidents: () -> Unit,
-    onLogout: () -> Unit
+    profile: UserProfile,
+    appVersion: String,
+    isDarkTheme: Boolean,
+    onToggleTheme: () -> Unit,
+    onOpenDrawer: () -> Unit,
+    onNavigate: (String) -> Unit
 ) {
-    val auth = FirebaseAuth.getInstance()
-    val db = FirebaseFirestore.getInstance()
-    val uid = auth.currentUser?.uid
     val context = LocalContext.current
-
-    // --- ESTADOS PARA NOME E CARGO ---
-    var userName by remember { mutableStateOf("") }
-    var userJobRaw by remember { mutableStateOf("inspector") }
-    var userJobDisplay by remember { mutableStateOf("Inspetor") }
-    val userPermissions = remember { mutableStateMapOf<String, Boolean>() }
-    var showLogoutDialog by remember { mutableStateOf(false) }
-
-    // --- BUSCA NA COLEÇÃO USERS PELO CAMPO ROLE E PERMISSÕES ---
-    LaunchedEffect(uid) {
-        if (uid != null) {
-            val fallbackName = auth.currentUser?.displayName ?: auth.currentUser?.email ?: "Usuário"
-            db.collection("users").document(uid).get().addOnSuccessListener { doc ->
-                userName = doc.getString("name") ?: doc.getString("nome") ?: fallbackName
-
-                val role = doc.getString("role") ?: "inspector"
-                userJobRaw = role.lowercase().trim()
-
-                userJobDisplay = when (userJobRaw) {
-                    "admin" -> "Administrador"
-                    "escritorio" -> "Escritório"
-                    "torre_de_controle" -> "Torre de Controle"
-                    else -> "Inspetor"
-                }
-
-                userPermissions.clear()
-                userPermissions.putAll(NexCheckLogic.effectivePermissions(userJobRaw, doc.get("permissions")))
-            }.addOnFailureListener {
-                userName = fallbackName
-                userPermissions.putAll(NexCheckLogic.defaultPermissions(userJobRaw))
-            }
-        }
-    }
-
-    // Enquanto as permissões não chegam, mostra só o que todo inspetor pode ver
-    // (evita "piscar" módulos de gestão para quem não tem acesso).
-    val perms: Map<String, Boolean> = userPermissions.ifEmpty { NexCheckLogic.defaultPermissions("inspector") }
-    fun can(key: String) = perms[key] == true
-
     var isOnline by remember { mutableStateOf(true) }
-    val appVersion = remember {
-        try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0"
-        } catch (e: Exception) { "1.0" }
-    }
 
     DisposableEffect(context) {
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -119,22 +59,7 @@ fun MainMenuScreen(
         onDispose { connectivityManager.unregisterNetworkCallback(networkCallback) }
     }
 
-    val inspectionModules = buildList {
-        if (can("nova_vistoria_cavalo")) add(ModuleItem("Vistoria Cavalo", "Nova inspeção do cavalo mecânico", Icons.Default.LocalShipping, ModuleColors.Cavalo) { onNavigateToInspection("cavalo") })
-        if (can("nova_vistoria_carreta")) add(ModuleItem("Vistoria Carreta", "Nova inspeção de implemento", Icons.Default.RvHookup, ModuleColors.Carreta) { onNavigateToInspection("implemento") })
-        if (can("historico")) add(ModuleItem("Realizadas", "Histórico e relatórios", Icons.Default.History, ModuleColors.Historico, onNavigateToHistory))
-        if (can("pendencias")) add(ModuleItem("Pendências", "Vencidas e revistorias", Icons.Default.PendingActions, ModuleColors.Pendencias, onNavigateToPendencies))
-    }
-    val operationalModules = buildList {
-        if (can("fumaca_nova")) add(ModuleItem("Aferição de Fumaça", "Escala Ringelmann", Icons.Default.Air, ModuleColors.Fumaca, onNavigateToSmokeForm))
-        if (can("fumaca_pendencias")) add(ModuleItem("Pendências Fumaça", "Vencimentos de aferição", Icons.Default.ReportProblem, ModuleColors.FumacaPendencias, onNavigateToSmokePendencies))
-        if (can("diario_bordo")) add(ModuleItem("Diário de Bordo", "Checklist pré-carregamento", Icons.AutoMirrored.Filled.FactCheck, ModuleColors.Diario, onNavigateToLogbooks))
-    }
-    val managementModules = buildList {
-        if (can("agenda")) add(ModuleItem("Agenda", "Calendário de vistorias", Icons.Default.CalendarMonth, ModuleColors.Agenda, onNavigateToSchedules))
-        if (can("ocorrencias")) add(ModuleItem("Ocorrências", "Acidentes e falhas", Icons.Default.CarCrash, ModuleColors.Ocorrencias, onNavigateToIncidents))
-        if (userJobRaw == "admin") add(ModuleItem("Usuários", "Permissões de acesso", Icons.Default.ManageAccounts, ModuleColors.Admin, onNavigateToUserManagement))
-    }
+    val visible = profile.visibleModules()
 
     Column(
         modifier = Modifier
@@ -147,57 +72,45 @@ fun MainMenuScreen(
     ) {
         // --- CABEÇALHO ---
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    initialsOf(userName),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
+            HeaderIconButton(onClick = onOpenDrawer) { Icon(Icons.Default.Menu, contentDescription = "Abrir menu") }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(greeting(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    userName.ifBlank { " " },
+                    profile.name.ifBlank { " " },
                     style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            IconButton(
-                onClick = { showLogoutDialog = true },
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+            HeaderIconButton(onClick = onToggleTheme) {
+                Icon(
+                    if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    contentDescription = if (isDarkTheme) "Usar tema claro" else "Usar tema escuro"
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            // Avatar também abre o menu lateral
+            Box(
+                Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer).clickable(onClick = onOpenDrawer),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Sair", tint = MaterialTheme.colorScheme.error)
+                Text(profile.initials, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
             }
         }
 
         Spacer(Modifier.height(16.dp))
-
-        // --- CARTÃO DE STATUS ---
-        StatusHeroCard(isOnline = isOnline, role = userJobDisplay, version = appVersion)
+        StatusHeroCard(isOnline = isOnline, role = profile.roleDisplay, version = appVersion)
 
         // --- MÓDULOS ---
-        if (inspectionModules.isNotEmpty()) {
-            Spacer(Modifier.height(24.dp))
-            SectionTitle("Vistoria eletromecânica")
-            ModuleGrid(inspectionModules)
-        }
-        if (operationalModules.isNotEmpty()) {
-            Spacer(Modifier.height(24.dp))
-            SectionTitle("Operacional")
-            ModuleGrid(operationalModules)
-        }
-        if (managementModules.isNotEmpty()) {
-            Spacer(Modifier.height(24.dp))
-            SectionTitle("Gestão")
-            ModuleGrid(managementModules)
+        ModuleSection.entries.forEach { section ->
+            val modules = visible.filter { it.section == section }
+            if (modules.isNotEmpty()) {
+                Spacer(Modifier.height(24.dp))
+                SectionTitle(section.title)
+                ModuleGrid(modules, onNavigate)
+            }
         }
 
         Spacer(Modifier.height(32.dp))
@@ -209,21 +122,18 @@ fun MainMenuScreen(
         )
         Spacer(Modifier.height(8.dp))
     }
+}
 
-    if (showLogoutDialog) {
-        AlertDialog(
-            onDismissRequest = { showLogoutDialog = false },
-            icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null) },
-            title = { Text("Sair da conta?") },
-            text = { Text("Você precisará entrar novamente para usar o app.") },
-            confirmButton = {
-                TextButton(onClick = { showLogoutDialog = false; onLogout() }) {
-                    Text("Sair", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text("Cancelar") } }
-        )
-    }
+@Composable
+private fun HeaderIconButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+        colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+    ) { content() }
 }
 
 @Composable
@@ -247,30 +157,16 @@ private fun StatusHeroCard(isOnline: Boolean, role: String, version: String) {
     ) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(today, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.weight(1f))
+                Text(today, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.85f), modifier = Modifier.weight(1f))
                 Surface(color = Color.White.copy(alpha = 0.18f), shape = CircleShape) {
-                    Text(
-                        role.uppercase(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
+                    Text(role.uppercase(), style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
                 }
             }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    if (isOnline) Icons.Default.CloudDone else Icons.Default.CloudOff,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(26.dp)
-                )
+                Icon(if (isOnline) Icons.Default.CloudDone else Icons.Default.CloudOff, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
                 Spacer(Modifier.width(10.dp))
-                Text(
-                    if (isOnline) "Operação online" else "Modo offline",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = Color.White
-                )
+                Text(if (isOnline) "Operação online" else "Modo offline", style = MaterialTheme.typography.headlineSmall, color = Color.White)
             }
             Spacer(Modifier.height(4.dp))
             Text(
@@ -284,11 +180,11 @@ private fun StatusHeroCard(isOnline: Boolean, role: String, version: String) {
 }
 
 @Composable
-private fun ModuleGrid(items: List<ModuleItem>) {
+private fun ModuleGrid(items: List<AppModule>, onNavigate: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         items.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                row.forEach { item -> ModuleTile(item, Modifier.weight(1f)) }
+                row.forEach { item -> ModuleTile(item, Modifier.weight(1f)) { onNavigate(item.route) } }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
@@ -296,8 +192,8 @@ private fun ModuleGrid(items: List<ModuleItem>) {
 }
 
 @Composable
-private fun ModuleTile(item: ModuleItem, modifier: Modifier) {
-    NexCard(modifier = modifier, onClick = item.onClick) {
+private fun ModuleTile(item: AppModule, modifier: Modifier, onClick: () -> Unit) {
+    NexCard(modifier = modifier, onClick = onClick) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             IconBadge(item.icon, item.color)
             Spacer(Modifier.weight(1f))
@@ -325,13 +221,4 @@ private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_
     in 5..11 -> "Bom dia,"
     in 12..17 -> "Boa tarde,"
     else -> "Boa noite,"
-}
-
-private fun initialsOf(name: String): String {
-    val parts = name.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-    return when {
-        parts.isEmpty() -> ""
-        parts.size == 1 -> parts[0].take(2).uppercase()
-        else -> "${parts.first().first()}${parts.last().first()}".uppercase()
-    }
 }
