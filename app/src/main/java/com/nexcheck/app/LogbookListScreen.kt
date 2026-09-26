@@ -2,42 +2,39 @@ package com.nexcheck.app
 
 import android.content.Context
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.FactCheck
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.nexcheck.app.ui.components.*
+import com.nexcheck.app.ui.theme.NexTheme
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogbookListScreen(onBack: () -> Unit, onNewLogbook: () -> Unit) {
     val context = LocalContext.current
     val db = FirebaseFirestore.getInstance()
-    val sdfDate = SimpleDateFormat("dd/MM/yyyy", BrLocale)
-    val sdfTime = SimpleDateFormat("HH:mm", BrLocale)
+    val sdfFull = remember { SimpleDateFormat("dd/MM/yyyy · HH:mm", BrLocale) }
 
     var logbooks by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -54,137 +51,120 @@ fun LogbookListScreen(onBack: () -> Unit, onNewLogbook: () -> Unit) {
         onDispose { registration.remove() }
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding(),
-        containerColor = FintechBg,
-        topBar = {
-            TopAppBar(
-                title = { Text("Diários de Bordo", fontWeight = FontWeight.Black) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Voltar") } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
-            )
-        },
+    val filtered = remember(logbooks, searchText) {
+        logbooks.filter {
+            val placa = it["plate"]?.toString() ?: ""
+            val mot = it["driverName"]?.toString() ?: ""
+            placa.contains(searchText, true) || mot.contains(searchText, true)
+        }
+    }
+
+    NexScaffold(
+        title = "Diários de bordo",
+        subtitle = "Últimos 50 registros",
+        onBack = onBack,
         floatingActionButton = {
-            FloatingActionButton(onClick = onNewLogbook, containerColor = PrimaryBlue, contentColor = Color.White) {
-                Icon(Icons.Default.Add, "Novo")
-            }
+            ExtendedFloatingActionButton(
+                onClick = onNewLogbook,
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("Novo diário") }
+            )
         }
     ) { padding ->
-        Column(Modifier.padding(padding).padding(16.dp)) {
-            OutlinedTextField(
-                value = searchText, onValueChange = { searchText = it.uppercase() },
-                placeholder = { Text("Buscar Placa ou Motorista...") },
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                shape = RoundedCornerShape(12.dp), leadingIcon = { Icon(Icons.Default.Search, null) }
-            )
-
-            if (isLoading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = PrimaryBlue)
-            else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val filtered = logbooks.filter {
-                        val placa = it["plate"]?.toString() ?: ""
-                        val mot = it["driverName"]?.toString() ?: ""
-                        placa.contains(searchText) || mot.contains(searchText)
-                    }
-                    items(filtered) { log -> LogbookCard(log, sdfDate, sdfTime) { selectedLogbook = log } }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item { SearchField(searchText, { searchText = it }, "Buscar placa ou motorista") }
+            when {
+                isLoading -> item { LoadingState() }
+                filtered.isEmpty() -> item { EmptyState(Icons.AutoMirrored.Filled.FactCheck, "Nenhum diário encontrado", "Registre um novo diário pelo botão abaixo.") }
+                else -> items(filtered, key = { it["id"].toString() }) { log ->
+                    LogbookCard(log, sdfFull) { selectedLogbook = log }
                 }
             }
         }
     }
 
-    // MODAL DE DETALHES (IGUAL AO JS)
+    // --- DETALHES ---
     selectedLogbook?.let { data ->
-        val number = data["logNumber"]?.toString() ?: "SN"
         val status = data["status"]?.toString() ?: "Pendente"
-        val isApproved = status == "Aprovado" || status == "Liberado"
-        val badgeColor = if (isApproved) Color(0xFF16A34A) else Color(0xFFDC2626)
-        val badgeBg = if (isApproved) Color(0xFFDCFCE7) else Color(0xFFFEE2E2)
-        val dateFull = (data["createdAt"] as? Timestamp)?.toDate()?.let { SimpleDateFormat("dd/MM/yyyy HH:mm", BrLocale).format(it) } ?: "N/A"
+        val dateFull = (data["createdAt"] as? Timestamp)?.toDate()?.let { sdfFull.format(it) } ?: "—"
 
-        Dialog(onDismissRequest = { selectedLogbook = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Surface(modifier = Modifier.fillMaxSize(), color = FintechBg) {
-                Column {
-                    TopAppBar(
-                        title = { Text("Diário #$number", fontWeight = FontWeight.Black) },
-                        navigationIcon = { IconButton(onClick = { selectedLogbook = null }) { Icon(Icons.Default.Close, null) } },
-                        actions = { IconButton(onClick = { printLogbookReport(context, data) }) { Icon(Icons.Default.Print, null, tint = PrimaryBlue) } },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
-                    )
+        FullScreenDetail(
+            title = "Diário Nº ${data["logNumber"] ?: "—"}",
+            subtitle = dateFull,
+            onClose = { selectedLogbook = null },
+            actions = {
+                IconButton(onClick = { printLogbookReport(context, data) }) { Icon(Icons.Default.Print, contentDescription = "Imprimir") }
+            }
+        ) {
+            item {
+                NexCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        PlateTag(data["plate"]?.toString() ?: "", large = true)
+                        Spacer(Modifier.weight(1f))
+                        StatusPill(status)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        InfoItem("Motorista", data["driverName"]?.toString() ?: "", Modifier.weight(1f))
+                        InfoItem("Transportadora", data["carrier"]?.toString() ?: "", Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        InfoItem("Composição", data["compositionType"]?.toString() ?: "PADRÃO", Modifier.weight(1f))
+                        InfoItem("Carroceria", data["bodyType"]?.toString() ?: "SIDER", Modifier.weight(1f))
+                    }
+                }
+            }
 
-                    LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
-                        item {
-                            Card(colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-                                Column(Modifier.padding(16.dp)) {
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Placa: ${data["plate"]}", fontWeight = FontWeight.Black, fontSize = 18.sp)
-                                        Surface(color = badgeBg, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.5f))) {
-                                            Text(status.uppercase(), color = badgeColor, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
-                                        }
-                                    }
-                                    Spacer(Modifier.height(12.dp))
-                                    Text("Motorista: ${data["driverName"]}", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                    Text("Transportadora: ${data["carrier"]}", fontSize = 14.sp)
-                                    Text("Carroceria: ${data["bodyType"] ?: "SIDER"}", fontSize = 14.sp)
-                                    Spacer(Modifier.height(8.dp))
-                                    Text("Registrado em: $dateFull", fontSize = 12.sp, color = TextMuted)
-                                }
+            val failed = data["failedItems"].asStringList()
+            if (failed.isNotEmpty()) {
+                item {
+                    Surface(color = NexTheme.status.dangerContainer, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Reprovações", style = MaterialTheme.typography.titleSmall, color = NexTheme.status.danger)
+                            failed.forEach { f ->
+                                Text("• $f", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(top = 4.dp))
                             }
                         }
+                    }
+                }
+            }
 
-                        // LÊ A ESTRUTURA EXATA DO JS (checklistStruct)
-                        item {
-                            SectionTitle("ITENS VERIFICADOS")
-                            val struct = data["checklistStruct"].asMapList()
-                            if (struct.isNotEmpty()) {
-                                struct.forEach { section ->
-                                    val sTitle = section["sectionTitle"]?.toString() ?: "Geral"
-                                    Card(colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-                                        Column(Modifier.padding(12.dp)) {
-                                            Text(sTitle.uppercase(), fontWeight = FontWeight.Black, fontSize = 12.sp, color = TextMuted, modifier = Modifier.padding(bottom = 8.dp))
-                                            section["items"].asMapList().forEach { item ->
-                                                val name = item["name"]?.toString() ?: ""
-                                                val st = item["status"]?.toString() ?: "NA"
-                                                val isOk = st == "OK"
-                                                val isNa = st == "NA"
-                                                val stColor = if (isOk) Color(0xFF16A34A) else if(isNa) Color.Gray else Color(0xFFDC2626)
-                                                val stBg = if (isOk) Color(0xFFDCFCE7) else if(isNa) Color(0xFFF3F4F6) else Color(0xFFFEE2E2)
-
-                                                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                                                    Text(name, fontSize = 13.sp, color = TextDark, modifier = Modifier.weight(1f))
-                                                    Surface(color = stBg, shape = RoundedCornerShape(4.dp), border = BorderStroke(1.dp, stColor.copy(alpha = 0.3f))) {
-                                                        Text(st, color = stColor, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                                    }
-                                                }
-                                                HorizontalDivider(color = CardBorder.copy(alpha = 0.5f))
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            val failed = data["failedItems"].asStringList()
-                            if (failed.isNotEmpty()) {
-                                Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)), border = BorderStroke(1.dp, Color(0xFFFECACA)), modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-                                    Column(Modifier.padding(16.dp)) {
-                                        Text("REPROVAÇÕES", fontWeight = FontWeight.Black, color = Color(0xFF991B1B), fontSize = 12.sp)
-                                        failed.forEach { f -> Text("• $f", fontSize = 12.sp, color = Color(0xFFB91C1C), modifier = Modifier.padding(top = 4.dp)) }
-                                    }
-                                }
+            val struct = data["checklistStruct"].asMapList()
+            if (struct.isNotEmpty()) item { SectionTitle("Itens verificados", Modifier.padding(top = 8.dp)) }
+            struct.forEach { section ->
+                item {
+                    NexCard {
+                        Text(section["sectionTitle"]?.toString() ?: "Geral", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(8.dp))
+                        section["items"].asMapList().forEachIndexed { index, itm ->
+                            if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(itm["name"]?.toString() ?: "", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                val st = itm["status"]?.toString() ?: "NA"
+                                StatusPill(if (st == "NA") "N/A" else st)
                             }
                         }
+                    }
+                }
+            }
 
-                        item {
-                            SectionTitle("ASSINATURA")
-                            Card(colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth().height(140.dp)) {
-                                Box(Modifier.fillMaxSize(), Alignment.Center) {
-                                    val sig = data["signature"]?.toString() ?: ""
-                                    val bmp = remember(sig) { decodeBase64ToBitmap(sig) }
-                                    if (bmp != null) Image(bitmap = bmp, contentDescription = null, modifier = Modifier.fillMaxSize().padding(8.dp), contentScale = ContentScale.Fit)
-                                    else Text("Sem assinatura", color = Color.LightGray)
-                                }
-                            }
-                            Spacer(Modifier.height(40.dp))
-                        }
+            item { SectionTitle("Assinatura do motorista", Modifier.padding(top = 8.dp)) }
+            item {
+                val sig = data["signature"]?.toString() ?: ""
+                val bmp = remember(sig) { decodeBase64ToBitmap(sig) }
+                NexCard {
+                    // Fundo branco fixo: a assinatura é traço preto em PNG transparente
+                    Box(
+                        Modifier.fillMaxWidth().height(140.dp).clip(MaterialTheme.shapes.medium).background(Color.White),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (bmp != null) Image(bitmap = bmp, contentDescription = "Assinatura", modifier = Modifier.fillMaxSize().padding(8.dp), contentScale = ContentScale.Fit)
+                        else Text("Sem assinatura", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                     }
                 }
             }
@@ -193,27 +173,38 @@ fun LogbookListScreen(onBack: () -> Unit, onNewLogbook: () -> Unit) {
 }
 
 @Composable
-private fun LogbookCard(log: Map<String, Any>, sdfD: SimpleDateFormat, sdfT: SimpleDateFormat, onClick: () -> Unit) {
+private fun LogbookCard(log: Map<String, Any>, sdf: SimpleDateFormat, onClick: () -> Unit) {
     val status = log["status"]?.toString() ?: "Pendente"
-    val color = if (status == "Aprovado") Color(0xFF10B981) else Color(0xFFEF4444)
     val date = (log["createdAt"] as? Timestamp)?.toDate()
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth().clickable { onClick() }) {
-        Row(Modifier.height(IntrinsicSize.Min)) {
-            Box(Modifier.width(6.dp).fillMaxHeight().background(color))
-            Column(Modifier.padding(16.dp).fillMaxWidth()) {
-                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                    Text(log["plate"]?.toString() ?: "S/P", fontWeight = FontWeight.Black, fontSize = 18.sp)
-                    Text(status.uppercase(), color = color, fontWeight = FontWeight.Black, fontSize = 10.sp)
-                }
-                Text(log["carrier"]?.toString() ?: "-", fontSize = 12.sp, color = TextMuted, fontWeight = FontWeight.Bold)
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), Arrangement.SpaceBetween) {
-                    Text(log["driverName"]?.toString() ?: "N/A", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text(date?.let { "${sdfD.format(it)} ${sdfT.format(it)}" } ?: "--/--", fontSize = 12.sp, color = TextMuted)
-                }
-            }
+    NexCard(onClick = onClick, accent = toneColors(toneFor(status)).first) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PlateTag(log["plate"]?.toString() ?: "")
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Nº ${log["logNumber"] ?: "—"}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            StatusPill(status)
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth()) {
+            InfoItem("Motorista", log["driverName"]?.toString() ?: "", Modifier.weight(1f))
+            InfoItem("Transportadora", log["carrier"]?.toString() ?: "", Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(12.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(date?.let { sdf.format(it) } ?: "—", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
+
+// =========================================================================
+// IMPRESSÃO
+// =========================================================================
 
 private fun printLogbookReport(context: Context, data: Map<String, Any>) {
     val db = FirebaseFirestore.getInstance()

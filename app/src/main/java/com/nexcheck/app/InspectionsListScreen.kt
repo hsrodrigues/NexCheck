@@ -1,35 +1,29 @@
 package com.nexcheck.app
 
 import android.content.Context
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.FactCheck
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.google.firebase.Timestamp
+import com.nexcheck.app.ui.components.*
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.*
@@ -58,173 +52,115 @@ fun InspectionsListScreen(
         repository.getCompanyLogo { logo -> companyLogo = logo }
     }
 
-    Scaffold(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .imePadding(),
-        containerColor = FintechBg,
-        topBar = {
-            TopAppBar(
-                title = { Text("Vistorias Realizadas", fontWeight = FontWeight.Black) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar") }
-                }
-            )
-        }
+    val grouped = remember(inspections, searchText) {
+        groupInspections(inspections.filter {
+            val info = it["vehicleInfo"] as? Map<*, *>
+            val placa = info?.get("placa")?.toString() ?: info?.get("composicao1")?.toString() ?: ""
+            val comp = it["company"]?.toString() ?: ""
+            placa.contains(searchText, ignoreCase = true) || comp.contains(searchText, ignoreCase = true)
+        })
+    }
+
+    NexScaffold(
+        title = "Vistorias realizadas",
+        subtitle = if (isLoading) null else "${grouped.size} conjuntos nas últimas 50 vistorias",
+        onBack = onBack
     ) { padding ->
-        Column(Modifier.padding(padding).padding(16.dp)) {
-            OutlinedTextField(
-                value = searchText, onValueChange = { searchText = it },
-                placeholder = { Text("Buscar placa ou transportadora...") },
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                shape = RoundedCornerShape(12.dp),
-                leadingIcon = { Icon(Icons.Default.Search, null) }
-            )
-
-            if (isLoading) {
-                LinearProgressIndicator(Modifier.fillMaxWidth(), color = PrimaryBlue)
-            } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val filtered = inspections.filter {
-                        val info = it["vehicleInfo"] as? Map<*, *>
-                        val placa = info?.get("placa")?.toString() ?: info?.get("composicao1")?.toString() ?: ""
-                        val comp = it["company"]?.toString() ?: ""
-                        placa.contains(searchText, ignoreCase = true) || comp.contains(searchText, ignoreCase = true)
-                    }
-
-                    val grouped = groupInspections(filtered)
-
-                    if (grouped.isEmpty()) {
-                        item { Text("Nenhum conjunto encontrado.", color = TextMuted) }
-                    }
-
-                    items(grouped) { group ->
-                        GroupCard(group, context) { selectedGroup = group }
-                    }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item { SearchField(searchText, { searchText = it }, "Buscar placa ou transportadora") }
+            when {
+                isLoading -> item { LoadingState() }
+                grouped.isEmpty() -> item { EmptyState(Icons.Default.SearchOff, "Nenhuma vistoria encontrada", "Tente buscar por outra placa ou transportadora.") }
+                else -> items(grouped, key = { it.allIds.first() }) { group ->
+                    GroupCard(group, context) { selectedGroup = group }
                 }
             }
         }
     }
 
+    // --- CONJUNTO: cavalo + composições ---
     selectedGroup?.let { group ->
         if (selectedInspection == null) {
-            Dialog(onDismissRequest = { selectedGroup = null }) {
-                Surface(shape = RoundedCornerShape(16.dp), color = FintechBg) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text(
-                            "Detalhamento do Conjunto",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 18.sp,
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
-
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val allItems = mutableListOf<Map<String, Any>>()
-
-                            group.cavalo?.let { allItems.add(it) }
-                            allItems.addAll(group.composicoes)
-
-                            items(allItems) { item ->
-                                InspectionCard(item, context) { selectedInspection = item }
-                            }
-                        }
-
-                        Spacer(Modifier.height(16.dp))
-                        TextButton(
-                            onClick = { selectedGroup = null },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text("FECHAR", fontWeight = FontWeight.Bold)
-                        }
+            ModalBottomSheet(
+                onDismissRequest = { selectedGroup = null },
+                containerColor = MaterialTheme.colorScheme.background
+            ) {
+                Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+                    Text("Conjunto", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Toque em um veículo para ver o relatório",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    val allItems = listOfNotNull(group.cavalo) + group.composicoes
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(allItems) { item -> InspectionCard(item, context) { selectedInspection = item } }
                     }
                 }
             }
         }
     }
 
+    // --- RELATÓRIO ---
     selectedInspection?.let { data ->
-        Dialog(
-            onDismissRequest = { selectedInspection = null },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
+        val numero = data["inspectionNumber"]?.toString() ?: "—"
+        FullScreenDetail(
+            title = "Relatório Nº $numero",
+            subtitle = data["vehicleType"]?.toString()?.replace("Inspeção Eletromecânica - ", ""),
+            onClose = { selectedInspection = null },
+            actions = {
+                IconButton(onClick = {
+                    val id = data["id"]?.toString() ?: ""
+                    if (id.isNotEmpty()) onViewInspection(id)
+                }) { Icon(Icons.AutoMirrored.Filled.FactCheck, contentDescription = "Ver checklist completo") }
+                IconButton(onClick = { printInspectionReport(context, data, companyLogo) }) {
+                    Icon(Icons.Default.Print, contentDescription = "Imprimir")
+                }
+            }
         ) {
-            Surface(modifier = Modifier.fillMaxSize(), color = FintechBg) {
-                Column {
-                    TopAppBar(
-                        title = { Text("Relatório Oficial", fontWeight = FontWeight.Black) },
-                        navigationIcon = {
-                            IconButton(onClick = { selectedInspection = null }) {
-                                Icon(Icons.Default.Close, contentDescription = "Fechar")
+            item { ReportHeaderBlock(data) }
+
+            val itemsMap = data["items"] as? Map<*, *>
+            if (!itemsMap.isNullOrEmpty()) item { SectionTitle("Checklist", Modifier.padding(top = 8.dp)) }
+            itemsMap?.forEach { (_, sectionObj) ->
+                val section = sectionObj as? Map<*, *>
+                val title = section?.get("title")?.toString() ?: "Seção"
+                val innerItems = section?.get("items") as? Map<*, *>
+                if (!innerItems.isNullOrEmpty()) {
+                    item {
+                        NexCard {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                                val hasRuim = innerItems.values.any { it.toString() == "ruim" }
+                                StatusPill(if (hasRuim) "Reprovado" else "Aprovado")
                             }
-                        },
-                        actions = {
-                            IconButton(onClick = {
-                                val id = data["id"]?.toString() ?: ""
-                                if (id.isNotEmpty()) onViewInspection(id)
-                            }) {
-                                Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Ver Checklist Interativo", tint = PrimaryBlue)
-                            }
-                            IconButton(onClick = { printInspectionReport(context, data, companyLogo) }) {
-                                Icon(Icons.Default.Print, contentDescription = "Imprimir", tint = PrimaryBlue)
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
-                    )
-
-                    LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
-                        item { ReportHeaderBlock(data) }
-                        item { Spacer(Modifier.height(24.dp)) }
-                        item { Text("CHECKLIST GERAL", fontWeight = FontWeight.Black, color = TextMuted, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp)) }
-
-                        val itemsMap = data["items"] as? Map<*, *>
-                        itemsMap?.forEach { (_, sectionObj) ->
-                            val section = sectionObj as? Map<*, *>
-                            val title = section?.get("title")?.toString() ?: "Seção"
-                            val innerItems = section?.get("items") as? Map<*, *>
-
-                            if (innerItems != null && innerItems.isNotEmpty()) {
-                                item {
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                                        border = BorderStroke(1.dp, CardBorder),
-                                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
-                                    ) {
-                                        Column(Modifier.padding(16.dp)) {
-                                            Text(title.uppercase(), fontWeight = FontWeight.Bold, color = PrimaryBlue, fontSize = 14.sp)
-                                            HorizontalDivider(Modifier.padding(vertical = 8.dp), color = CardBorder)
-
-                                            innerItems.forEach { (itemName, statusRaw) ->
-                                                val status = statusRaw.toString()
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text(itemName.toString(), fontSize = 13.sp, color = TextDark, modifier = Modifier.weight(1f))
-                                                    ReportStatusBadge(status)
-                                                }
-                                            }
-                                        }
-                                    }
+                            Spacer(Modifier.height(8.dp))
+                            innerItems.entries.forEachIndexed { index, (itemName, statusRaw) ->
+                                if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(itemName.toString(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    val status = statusRaw.toString()
+                                    StatusPill(if (status == "na") "N/A" else status)
                                 }
                             }
                         }
-
-                        item { Spacer(Modifier.height(16.dp)) }
-                        item { ReportConclusionBlock(data) }
-                        item { Spacer(Modifier.height(16.dp)) }
-                        item { ReportSignaturesBlock(data) }
-                        item { Spacer(Modifier.height(40.dp)) }
                     }
                 }
             }
+
+            item { ReportConclusionBlock(data) }
+            item { ReportSignaturesBlock(data) }
         }
     }
 }
 
 // =========================================================================
-// AS FUNÇÕES ABAIXO ESTÃO COM "PRIVATE" PARA ISOLAR E EVITAR CONFLITOS
+// AGRUPAMENTO (cavalo + composições da mesma viagem)
 // =========================================================================
 
 private data class InspectionGroup(
@@ -299,55 +235,201 @@ private fun groupInspections(inspections: List<Map<String, Any>>): List<Inspecti
 @Composable
 private fun GroupCard(group: InspectionGroup, context: Context, onClick: () -> Unit) {
     val isLiberado = group.combinedStatus == "Liberado"
-    val borderColor = if (isLiberado) Color(0xFF10B981) else Color(0xFFEF4444)
+    val (statusColor, _) = toneColors(toneFor(group.combinedStatus))
     val cInfo = group.cavalo?.get("vehicleInfo") as? Map<*, *>
     val compInfo = group.composicoes.firstOrNull()?.get("vehicleInfo") as? Map<*, *>
 
     val placaPrincipal = cInfo?.get("placa")?.toString() ?: compInfo?.get("composicao1")?.toString() ?: "S/ CAVALO"
-    val dateStr = SimpleDateFormat("dd/MM/yyyy", BrLocale).format(group.groupDate)
+    val dateStr = SimpleDateFormat("dd/MM/yyyy · HH:mm", BrLocale).format(group.groupDate)
     val compCount = group.composicoes.size
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, CardBorder),
-        modifier = Modifier.fillMaxWidth().clickable { onClick() }
-    ) {
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-            Box(Modifier.width(6.dp).fillMaxHeight().background(borderColor))
-
-            Row(Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(placaPrincipal, fontWeight = FontWeight.Black, fontSize = 20.sp, color = TextDark)
-                        if (compCount > 0) {
-                            Spacer(Modifier.width(8.dp))
-                            Surface(color = InputBg, shape = RoundedCornerShape(4.dp), border = BorderStroke(1.dp, CardBorder)) {
-                                Text("+ $compCount COMP.", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextMuted, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text(group.clientName, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PrimaryBlue)
-                    Text(dateStr, fontSize = 10.sp, color = TextMuted)
+    NexCard(onClick = onClick, accent = statusColor) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PlateTag(placaPrincipal)
+            if (compCount > 0) {
+                Spacer(Modifier.width(8.dp))
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape) {
+                    Text(
+                        "+$compCount comp.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
                 }
-
+            }
+            Spacer(Modifier.weight(1f))
+            StatusPill(group.combinedStatus)
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    group.clientName.ifBlank { "Sem transportadora" },
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (!isLiberado) {
-                        IconButton(
-                            onClick = { enviarWhatsApp(context, "reprovada", placaPrincipal, group.clientName, group.cavalo?.get("servicesNeeded")?.toString() ?: "Falha técnica") },
-                            modifier = Modifier.size(36.dp).background(Color(0xFFFEE2E2), CircleShape)
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "ZAP", tint = Color(0xFFDC2626), modifier = Modifier.size(16.dp))
-                        }
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    StatusBadge(group.combinedStatus)
+                    Icon(Icons.Default.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(12.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(dateStr, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (!isLiberado) {
+                WhatsAppButton {
+                    enviarWhatsApp(context, "reprovada", placaPrincipal, group.clientName, group.cavalo?.get("servicesNeeded")?.toString() ?: "Falha técnica")
                 }
             }
         }
     }
 }
+
+@Composable
+private fun WhatsAppButton(onClick: () -> Unit) {
+    FilledTonalButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = com.nexcheck.app.ui.theme.NexTheme.status.dangerContainer,
+            contentColor = com.nexcheck.app.ui.theme.NexTheme.status.danger
+        )
+    ) {
+        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("Avisar", style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+@Composable
+private fun ReportHeaderBlock(data: Map<String, Any>) {
+    val info = data["vehicleInfo"] as? Map<*, *>
+    val vehicleType = data["vehicleType"]?.toString() ?: ""
+    val isCavalo = vehicleType.contains("Cavalo")
+
+    val placa = if (isCavalo) info?.get("placa")?.toString() ?: "-" else info?.get("composicao1")?.toString() ?: "-"
+    val status = data["status"]?.toString() ?: "Pendente"
+    val dateString = data["inspectionDate"].asDate()?.let { SimpleDateFormat("dd/MM/yyyy HH:mm", BrLocale).format(it) } ?: "—"
+
+    NexCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PlateTag(placa, large = true)
+            Spacer(Modifier.weight(1f))
+            StatusPill(status)
+        }
+        Spacer(Modifier.height(16.dp))
+        Row(Modifier.fillMaxWidth()) {
+            if (isCavalo) {
+                InfoItem("Motorista", data["driverName"]?.toString() ?: "", Modifier.weight(1f))
+            } else {
+                InfoItem("Cavalo vinculado", info?.get("linkedCavaloPlate")?.toString() ?: "Não informado", Modifier.weight(1f))
+            }
+            InfoItem("Transportadora", data["company"]?.toString() ?: "", Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth()) {
+            InfoItem("Data da vistoria", dateString, Modifier.weight(1f))
+            InfoItem("Vistoriador", data["inspectorName"]?.toString() ?: "", Modifier.weight(1f))
+        }
+        // Próxima inspeção só aparece para cavalo
+        val next = data["nextInspectionDate"].asDate()
+        if (isCavalo && next != null) {
+            Spacer(Modifier.height(12.dp))
+            InfoItem(
+                "Próxima inspeção",
+                SimpleDateFormat("dd/MM/yyyy", BrLocale).format(next),
+                valueColor = MaterialTheme.colorScheme.primary,
+                emphasize = true
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReportConclusionBlock(data: Map<String, Any>) {
+    val servicos = data["servicesNeeded"]?.toString() ?: ""
+    val observacoes = data["observations"]?.toString() ?: ""
+    val danger = com.nexcheck.app.ui.theme.NexTheme.status.danger
+
+    SectionTitle("Conclusão", Modifier.padding(top = 8.dp))
+    NexCard {
+        Text("Serviços necessários", style = MaterialTheme.typography.labelMedium, color = danger)
+        Spacer(Modifier.height(4.dp))
+        Text(servicos.ifBlank { "Nenhum apontamento." }, style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(12.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Spacer(Modifier.height(12.dp))
+        Text("Observações gerais", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(4.dp))
+        Text(observacoes.ifBlank { "Nenhuma observação." }, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun ReportSignaturesBlock(data: Map<String, Any>) {
+    SectionTitle("Assinaturas", Modifier.padding(top = 8.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SignatureImageCard("Motorista / responsável", data["driverSignature"]?.toString() ?: "", Modifier.weight(1f))
+        SignatureImageCard("Vistoriador", data["inspectorSignature"]?.toString() ?: "", Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun SignatureImageCard(title: String, base64Str: String, modifier: Modifier) {
+    val bitmap = remember(base64Str) { decodeBase64ToBitmap(base64Str) }
+    NexCard(modifier) {
+        Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
+        // Fundo branco fixo: a assinatura é traço preto em PNG transparente
+        Box(
+            Modifier.fillMaxWidth().height(96.dp).clip(MaterialTheme.shapes.small).background(androidx.compose.ui.graphics.Color.White),
+            contentAlignment = Alignment.Center
+        ) {
+            if (bitmap != null) {
+                Image(bitmap = bitmap, contentDescription = "Assinatura", modifier = Modifier.fillMaxSize().padding(6.dp), contentScale = ContentScale.Fit)
+            } else {
+                Text("Sem assinatura", style = MaterialTheme.typography.bodySmall, color = androidx.compose.ui.graphics.Color.Gray)
+            }
+        }
+    }
+}
+
+@Composable
+private fun InspectionCard(data: Map<String, Any>, context: Context, onClick: () -> Unit) {
+    val info = data["vehicleInfo"] as? Map<*, *>
+    val type = data["vehicleType"]?.toString() ?: ""
+    val placa = info?.get("placa")?.toString() ?: info?.get("composicao1")?.toString() ?: "S/P"
+    val status = data["status"]?.toString() ?: "Pendente"
+    val isLiberado = status == "Liberado" || status == "Aprovado"
+    val company = data["company"]?.toString() ?: "S/ Empresa"
+    val servicos = data["servicesNeeded"]?.toString() ?: "Vários"
+
+    NexCard(onClick = onClick, accent = toneColors(toneFor(status)).first) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PlateTag(placa)
+            Spacer(Modifier.width(12.dp))
+            Text(
+                type.replace("Inspeção Eletromecânica - ", ""),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            StatusPill(status)
+        }
+        if (!isLiberado) {
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                WhatsAppButton { enviarWhatsApp(context, "reprovada", placa, company, servicos) }
+            }
+        }
+    }
+}
+
+// =========================================================================
+// IMPRESSÃO E WHATSAPP
+// =========================================================================
 
 private fun printInspectionReport(context: Context, data: Map<String, Any>, companyLogoBase64: String?) {
     val info = data["vehicleInfo"] as? Map<*, *>
@@ -545,165 +627,6 @@ private fun printInspectionReport(context: Context, data: Map<String, Any>, comp
     """.trimIndent()
 
     printHtml(context, htmlContent, "Laudo_Vistoria_$placa")
-}
-
-@Composable
-private fun ReportHeaderBlock(data: Map<String, Any>) {
-    val info = data["vehicleInfo"] as? Map<*, *>
-    val vehicleType = data["vehicleType"]?.toString() ?: ""
-    val isCavalo = vehicleType.contains("Cavalo")
-
-    val placa = if (isCavalo) info?.get("placa")?.toString() ?: "-" else info?.get("composicao1")?.toString() ?: "-"
-    val status = data["status"]?.toString() ?: "Pendente"
-    val numero = data["inspectionNumber"]?.toString() ?: "000"
-
-    val dateObj = data["inspectionDate"]
-    val dateString = if (dateObj is Timestamp) {
-        SimpleDateFormat("dd/MM/yyyy HH:mm", BrLocale).format(dateObj.toDate())
-    } else dateObj?.toString() ?: "Data N/A"
-
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("NEX-$numero", fontWeight = FontWeight.Black, fontSize = 20.sp, color = PrimaryBlue)
-                StatusBadge(status)
-            }
-            Spacer(Modifier.height(12.dp))
-
-            Text("Placa Principal: $placa", fontWeight = FontWeight.Black, fontSize = 16.sp)
-
-            if (isCavalo) {
-                Text("Motorista: ${data["driverName"] ?: "-"}", fontSize = 14.sp)
-            } else {
-                Text("Cavalo Vinculado: ${info?.get("linkedCavaloPlate") ?: "NÃO INFORMADO"}", fontSize = 14.sp)
-            }
-
-            Text("Empresa: ${data["company"] ?: "-"}", fontSize = 14.sp)
-
-            // 🔥 REGRA: Próxima Inspeção só aparece se for Cavalo e se tiver data
-            if (isCavalo && data["nextInspectionDate"] != null) {
-                val nd = data["nextInspectionDate"]
-                val ndStr = if (nd is Timestamp) SimpleDateFormat("dd/MM/yyyy", BrLocale).format(nd.toDate()) else nd.toString()
-                Spacer(Modifier.height(8.dp))
-                Text("Próxima Inspeção: $ndStr", fontSize = 14.sp, color = PrimaryBlue, fontWeight = FontWeight.Bold)
-            }
-
-            Spacer(Modifier.height(8.dp))
-            Text("Data da Vistoria: $dateString", fontSize = 12.sp, color = TextMuted)
-        }
-    }
-}
-
-@Composable
-private fun ReportConclusionBlock(data: Map<String, Any>) {
-    val servicos = data["servicesNeeded"]?.toString() ?: ""
-    val observacoes = data["observations"]?.toString() ?: ""
-
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text("CONCLUSÃO", fontWeight = FontWeight.Black, color = TextMuted, fontSize = 14.sp)
-            Spacer(Modifier.height(12.dp))
-            Text("Serviços Necessários:", fontWeight = FontWeight.Bold, color = Color(0xFFDC2626), fontSize = 13.sp)
-            Text(if (servicos.isBlank()) "Nenhum apontamento." else servicos, fontSize = 13.sp)
-            Spacer(Modifier.height(12.dp))
-            Text("Observações Gerais:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Text(if (observacoes.isBlank()) "Nenhuma observação." else observacoes, fontSize = 13.sp)
-        }
-    }
-}
-
-@Composable
-private fun ReportSignaturesBlock(data: Map<String, Any>) {
-    val driverSig = data["driverSignature"]?.toString() ?: ""
-    val inspectorSig = data["inspectorSignature"]?.toString() ?: ""
-
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        SignatureImageCard(title = "Motorista/Responsável", base64Str = driverSig, modifier = Modifier.weight(1f))
-        SignatureImageCard(title = "Vistoriador", base64Str = inspectorSig, modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun SignatureImageCard(title: String, base64Str: String, modifier: Modifier) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, CardBorder), modifier = modifier.height(140.dp)) {
-        Column(Modifier.padding(12.dp).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextMuted)
-            Spacer(Modifier.height(8.dp))
-            val bitmap = remember(base64Str) { decodeBase64ToBitmap(base64Str) }
-            if (bitmap != null) {
-                Image(bitmap = bitmap, contentDescription = "Assinatura", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-            } else {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Sem assinatura", fontSize = 10.sp, color = Color.LightGray) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun InspectionCard(data: Map<String, Any>, context: Context, onClick: () -> Unit) {
-    val info = data["vehicleInfo"] as? Map<*, *>
-    val type = data["vehicleType"]?.toString() ?: ""
-    val placa = info?.get("placa")?.toString() ?: info?.get("composicao1")?.toString() ?: "S/P"
-    val status = data["status"]?.toString() ?: "Pendente"
-    val isLiberado = status == "Liberado" || status == "Aprovado"
-    val company = data["company"]?.toString() ?: "S/ Empresa"
-    val servicos = data["servicesNeeded"]?.toString() ?: "Vários"
-
-    Card(
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, CardBorder),
-        modifier = Modifier.fillMaxWidth().clickable { onClick() }
-    ) {
-        Row(Modifier.padding(12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(placa, fontWeight = FontWeight.Black, fontSize = 16.sp)
-                Text(type.replace("Inspeção Eletromecânica - ", ""), fontSize = 10.sp, color = TextMuted, fontWeight = FontWeight.Bold)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!isLiberado) {
-                    IconButton(
-                        onClick = { enviarWhatsApp(context, "reprovada", placa, company, servicos) },
-                        modifier = Modifier.size(30.dp).background(Color(0xFFFEE2E2), CircleShape)
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "ZAP", tint = Color(0xFFDC2626), modifier = Modifier.size(14.dp))
-                    }
-                    Spacer(Modifier.width(8.dp))
-                }
-                StatusBadge(status)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReportStatusBadge(status: String) {
-    val (bgColor, textColor) = when (status.lowercase()) {
-        "bom" -> Pair(Color(0xFFDCFCE7), Color(0xFF16A34A))
-        "ruim" -> Pair(Color(0xFFFEE2E2), Color(0xFFDC2626))
-        else -> Pair(Color(0xFFF1F5F9), Color(0xFF64748B))
-    }
-    Surface(color = bgColor, shape = RoundedCornerShape(6.dp)) {
-        Text(status.uppercase(), color = textColor, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
-    }
-}
-
-@Composable
-private fun StatusBadge(status: String) {
-    val color = if(status == "Liberado" || status == "Aprovado") Color(0xFF10B981) else Color(0xFFEF4444)
-    Surface(
-        color = color.copy(alpha = 0.1f),
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, color.copy(alpha = 0.5f))
-    ) {
-        Text(
-            text = status.uppercase(),
-            color = color,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-        )
-    }
 }
 
 private fun enviarWhatsApp(context: Context, type: String, plate: String, company: String, info: String) {

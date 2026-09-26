@@ -3,15 +3,24 @@ package com.nexcheck.app
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import androidx.activity.enableEdgeToEdge
+import com.nexcheck.app.ui.theme.NexCheckTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,7 +39,13 @@ class MainActivity : ComponentActivity() {
 
         FirebaseApp.initializeApp(this)
         setContent {
-            NexCheckApp()
+            NexCheckTheme {
+                // Surface define a cor de texto padrão (onBackground) para todo o app;
+                // sem ela, textos sem cor explícita saem pretos no tema escuro.
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    NexCheckApp()
+                }
+            }
         }
     }
 }
@@ -42,7 +57,15 @@ fun NexCheckApp() {
 
     val startDestination = if (auth.currentUser != null) "menu" else "login"
 
-    NavHost(navController = navController, startDestination = startDestination) {
+    // Transição: a tela nova desliza levemente da direita, a anterior esmaece
+    NavHost(
+        navController = navController,
+        startDestination = startDestination,
+        enterTransition = { slideInHorizontally(tween(280)) { it / 6 } + fadeIn(tween(280)) },
+        exitTransition = { fadeOut(tween(200)) },
+        popEnterTransition = { fadeIn(tween(280)) },
+        popExitTransition = { slideOutHorizontally(tween(240)) { it / 6 } + fadeOut(tween(240)) }
+    ) {
 
         // TELA 1: LOGIN
         composable("login") {

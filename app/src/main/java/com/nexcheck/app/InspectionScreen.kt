@@ -1,46 +1,29 @@
 package com.nexcheck.app
 
 import android.widget.Toast
-import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.asAndroidPath
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.firebase.Timestamp
+import com.nexcheck.app.ui.components.*
 import java.text.SimpleDateFormat
 import java.util.*
 
-val FintechBg = Color(0xFFF8FAFC)
-val CardBorder = Color(0xFFE2E8F0)
-val PrimaryBlue = Color(0xFF2563EB)
-val InputBg = Color(0xFFF1F5F9)
-val TextDark = Color(0xFF0F172A)
-val TextMuted = Color(0xFF64748B)
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InspectionScreen(
     tipo: String,
@@ -80,8 +63,6 @@ fun InspectionScreen(
     var motorista by remember { mutableStateOf(preMotorista ?: "") }
 
     var clientId by remember { mutableStateOf<String?>(null) }
-    var clientDropdownExpanded by remember { mutableStateOf(false) }
-    var carrierDropdownExpanded by remember { mutableStateOf(false) }
 
     // Na visualização (vinda do histórico) o tipo real só é conhecido após carregar o documento
     var isCavalo by remember { mutableStateOf(tipo == "cavalo") }
@@ -239,318 +220,229 @@ fun InspectionScreen(
         }
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding(),
-        containerColor = FintechBg,
-        topBar = {
-            TopAppBar(
-                title = { Text(if (isReadOnly) "Visualizar Vistoria" else (checklist?.title ?: "Inspeção"), fontWeight = FontWeight.Black) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White, titleContentColor = TextDark),
-                modifier = Modifier.shadow(elevation = 2.dp)
-            )
+    // Chaves de todos os itens do checklist atual, para o progresso
+    val allKeys = checklist?.sections?.flatMap { s -> s.items.map { "${s.id}|${s.title}|$it" } } ?: emptyList()
+    val answered = allKeys.count { responses.containsKey(it) }
+    val vehicleLabel = if (isCavalo) "Cavalo mecânico" else "Implemento / Carreta"
+
+    fun salvar() {
+        val placaFinal = if (isCavalo) placa else composicao1
+        if (placaFinal.isBlank() || transportadora.isBlank()) {
+            Toast.makeText(context, "Atenção: Placa e Transportadora são obrigatórios!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isSaving = true
+        val inspetor = auth.currentUser?.displayName ?: "Inspetor Android"
+        val base64Motorista = captureSignatureToBase64(signatureDriver.value)
+        val base64Inspetor = captureSignatureToBase64(signatureInspector.value)
+
+        val finalInspDate = try { sdf.parse(inspectionDate) ?: now.time } catch (e: Exception) { now.time }
+        val finalNextDate = try { SimpleDateFormat("dd/MM/yyyy", BrLocale).parse(nextInspectionDate) ?: nextCal.time } catch (e: Exception) { nextCal.time }
+
+        repository.salvarVistoria(
+            inspectionType = inspectionType, clientId = clientId, clientName = clientName.ifEmpty { "Cliente Avulso" },
+            placa = placaFinal, transportadora = transportadora, motorista = motorista,
+            marca = marca, modelo = modelo, km = km, composicao2 = composicao2, composicao3 = composicao3,
+            linkedCavaloPlate = linkedCavaloPlate, inspectionDate = finalInspDate, nextInspectionDate = finalNextDate,
+            respostas = responses, observacoes = observacoes, servicos = servicos, statusFinal = statusFinal,
+            assinaturaMotoristaBase64 = base64Motorista, assinaturaInspetorBase64 = base64Inspetor,
+            isCavalo = isCavalo,
+            tipoVeiculo = checklist?.title ?: if (isCavalo) "Inspeção Eletromecânica - Cavalo" else "Inspeção Eletromecânica - Implemento",
+            inspectorName = inspetor,
+            onSuccess = {
+                isSaving = false
+                Toast.makeText(context, "Vistoria salva com sucesso!", Toast.LENGTH_LONG).show()
+                onNavigateBack()
+            },
+            onError = { erro ->
+                isSaving = false
+                Toast.makeText(context, "Erro no Servidor: $erro", Toast.LENGTH_LONG).show()
+            }
+        )
+    }
+
+    NexScaffold(
+        title = when {
+            isReadOnly -> "Detalhes da vistoria"
+            inspectionType == "Revistoria" -> "Revistoria"
+            else -> "Nova vistoria"
+        },
+        subtitle = vehicleLabel,
+        onBack = onNavigateBack,
+        bottomBar = {
+            if (!isReadOnly && !isLoading) {
+                BottomActionBar {
+                    if (allKeys.isNotEmpty()) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Checklist", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                            Text("$answered de ${allKeys.size} itens", style = MaterialTheme.typography.labelMedium)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        LinearProgressIndicator(
+                            progress = { if (allKeys.isEmpty()) 0f else answered / allKeys.size.toFloat() },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
+                            drawStopIndicator = {}
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    PrimaryButton(text = "Salvar vistoria", icon = Icons.Default.Check, loading = isSaving, onClick = { salvar() })
+                }
+            }
         }
     ) { padding ->
         if (isLoading) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = PrimaryBlue) }
-        } else {
-            LazyColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
-
+            LoadingState(Modifier.padding(padding))
+            return@NexScaffold
+        }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding).imePadding(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // --- RESUMO (modo visualização) ---
+            if (isReadOnly) {
                 item {
-                    SectionTitle("Informações Gerais")
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, CardBorder),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text("Tipo de Vistoria", fontWeight = FontWeight.Bold, color = TextMuted, fontSize = 12.sp)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = inspectionType == "Vistoria", onClick = { if(!isReadOnly) inspectionType = "Vistoria" })
-                                Text("Vistoria Inicial", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                Spacer(Modifier.width(16.dp))
-                                RadioButton(selected = inspectionType == "Revistoria", onClick = { if(!isReadOnly) inspectionType = "Revistoria" })
-                                Text("Revistoria", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color(0xFFEA580C))
-                            }
-                            Spacer(Modifier.height(16.dp))
-
-                            ExposedDropdownMenuBox(
-                                expanded = clientDropdownExpanded,
-                                onExpandedChange = { if(!isReadOnly) clientDropdownExpanded = !clientDropdownExpanded }
-                            ) {
-                                FintechTextField(
-                                    value = clientName, onValueChange = {}, label = "Cliente",
-                                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(), readOnly = true
-                                )
-                                ExposedDropdownMenu(expanded = clientDropdownExpanded, onDismissRequest = { clientDropdownExpanded = false }) {
-                                    allClients.forEach { client ->
-                                        DropdownMenuItem(
-                                            text = { Text(client["name"] ?: "", fontWeight = FontWeight.Bold) },
-                                            onClick = {
-                                                clientName = client["name"] ?: ""
-                                                clientId = client["id"]
-                                                clientDropdownExpanded = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
+                    NexCard {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            PlateTag(if (isCavalo) placa else composicao1, large = true)
+                            Spacer(Modifier.weight(1f))
+                            StatusPill(statusFinal)
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Row(Modifier.fillMaxWidth()) {
+                            InfoItem("Tipo", inspectionType, Modifier.weight(1f))
+                            InfoItem("Data", inspectionDate, Modifier.weight(1f))
+                        }
+                        if (isCavalo && nextInspectionDate.isNotBlank()) {
                             Spacer(Modifier.height(12.dp))
+                            InfoItem("Próxima inspeção", nextInspectionDate, valueColor = MaterialTheme.colorScheme.primary, emphasize = true)
+                        }
+                    }
+                }
+            }
 
-                            ExposedDropdownMenuBox(
-                                expanded = carrierDropdownExpanded,
-                                onExpandedChange = { if(!isReadOnly) carrierDropdownExpanded = !carrierDropdownExpanded }
-                            ) {
-                                FintechTextField(
-                                    value = transportadora,
-                                    onValueChange = { transportadora = it.uppercase(); carrierDropdownExpanded = true },
-                                    label = "Transportadora *",
-                                    readOnly = isReadOnly,
-                                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable).fillMaxWidth()
-                                )
-                                val filteredCarriers = allCarriers.filter { it.contains(transportadora, ignoreCase = true) }
-                                if (filteredCarriers.isNotEmpty() && transportadora.isNotEmpty() && !isReadOnly) {
-                                    ExposedDropdownMenu(expanded = carrierDropdownExpanded, onDismissRequest = { carrierDropdownExpanded = false }) {
-                                        filteredCarriers.take(5).forEach { selectionOption ->
-                                            DropdownMenuItem(
-                                                text = { Text(selectionOption, fontWeight = FontWeight.Bold) },
-                                                onClick = { transportadora = selectionOption; carrierDropdownExpanded = false }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(12.dp))
+            // --- INFORMAÇÕES GERAIS ---
+            item { SectionTitle("Informações gerais") }
+            item {
+                NexCard {
+                    if (!isReadOnly) {
+                        Text("Tipo de vistoria", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                        SegmentedChoice(
+                            options = listOf("Vistoria" to "Vistoria inicial", "Revistoria" to "Revistoria"),
+                            selected = inspectionType,
+                            onSelect = { inspectionType = it },
+                            toneOf = { if (it == "Revistoria") StatusTone.Revisit else StatusTone.Info }
+                        )
+                        Spacer(Modifier.height(16.dp))
+                    }
 
-                            if (isCavalo) {
-                                FintechTextField(value = placa, onValueChange = { placa = it.uppercase() }, label = "Placa *", readOnly = isReadOnly)
-                                Spacer(Modifier.height(12.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    FintechTextField(value = marca, onValueChange = { marca = it.uppercase() }, label = "Prefixo / Marca", modifier = Modifier.weight(1f), readOnly = isReadOnly)
-                                    FintechTextField(value = modelo, onValueChange = { modelo = it.uppercase() }, label = "Modelo", modifier = Modifier.weight(1f), readOnly = isReadOnly)
-                                }
-                                Spacer(Modifier.height(12.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    FintechTextField(value = km, onValueChange = { km = it }, label = "Hodômetro", keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f), readOnly = isReadOnly)
-                                    FintechTextField(value = motorista, onValueChange = { motorista = it.uppercase() }, label = "Motorista *", modifier = Modifier.weight(2f), readOnly = isReadOnly)
+                    SelectField(
+                        value = clientName,
+                        options = allClients.mapNotNull { it["name"] },
+                        onSelect = { name ->
+                            clientName = name
+                            clientId = allClients.firstOrNull { it["name"] == name }?.get("id")
+                        },
+                        label = "Cliente",
+                        readOnly = isReadOnly
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    CarrierField(value = transportadora, onValueChange = { transportadora = it }, carriers = allCarriers, readOnly = isReadOnly)
+                    Spacer(Modifier.height(12.dp))
+
+                    if (isCavalo) {
+                        NexTextField(value = placa, onValueChange = { placa = it.uppercase() }, label = "Placa *", readOnly = isReadOnly)
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            NexTextField(value = marca, onValueChange = { marca = it.uppercase() }, label = "Prefixo / Marca", modifier = Modifier.weight(1f), readOnly = isReadOnly)
+                            NexTextField(value = modelo, onValueChange = { modelo = it.uppercase() }, label = "Modelo", modifier = Modifier.weight(1f), readOnly = isReadOnly)
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            NexTextField(value = km, onValueChange = { km = it }, label = "Hodômetro", keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f), readOnly = isReadOnly)
+                            NexTextField(value = motorista, onValueChange = { motorista = it.uppercase() }, label = "Motorista *", modifier = Modifier.weight(1.6f), readOnly = isReadOnly)
+                        }
+                    } else {
+                        NexTextField(value = linkedCavaloPlate, onValueChange = { linkedCavaloPlate = it.uppercase() }, label = "Cavalo vinculado (placa) *", readOnly = isReadOnly)
+                        Spacer(Modifier.height(12.dp))
+                        NexTextField(value = composicao1, onValueChange = { composicao1 = it.uppercase() }, label = "1ª composição (placa) *", readOnly = isReadOnly)
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            NexTextField(value = composicao2, onValueChange = { composicao2 = it.uppercase() }, label = "2ª composição", modifier = Modifier.weight(1f), readOnly = isReadOnly)
+                            NexTextField(value = composicao3, onValueChange = { composicao3 = it.uppercase() }, label = "3ª composição", modifier = Modifier.weight(1f), readOnly = isReadOnly)
+                        }
+                    }
+
+                    if (!isReadOnly) {
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            NexTextField(value = inspectionDate, onValueChange = { inspectionDate = it }, label = "Data / hora", modifier = Modifier.weight(1f))
+                            NexTextField(value = nextInspectionDate, onValueChange = { nextInspectionDate = it }, label = "Vencimento", modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+
+            // --- CHECKLIST ---
+            checklist?.sections?.forEach { section ->
+                val keys = section.items.map { "${section.id}|${section.title}|$it" }
+                val done = keys.count { responses.containsKey(it) }
+                item(key = "header-${section.id}") {
+                    SectionTitle(
+                        title = section.title,
+                        modifier = Modifier.padding(top = 8.dp),
+                        trailing = {
+                            if (!isReadOnly && done < keys.size) {
+                                TextButton(onClick = { keys.forEach { k -> if (!responses.containsKey(k)) responses[k] = "bom" } }) {
+                                    Text("Restantes: Bom", style = MaterialTheme.typography.labelMedium)
                                 }
                             } else {
-                                FintechTextField(value = linkedCavaloPlate, onValueChange = { linkedCavaloPlate = it.uppercase() }, label = "Vincular Cavalo (Placa) *", readOnly = isReadOnly)
-                                Spacer(Modifier.height(12.dp))
-                                FintechTextField(value = composicao1, onValueChange = { composicao1 = it.uppercase() }, label = "1ª Composição (Placa) *", readOnly = isReadOnly)
-                                Spacer(Modifier.height(12.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    FintechTextField(value = composicao2, onValueChange = { composicao2 = it.uppercase() }, label = "2ª Composição", modifier = Modifier.weight(1f), readOnly = isReadOnly)
-                                    FintechTextField(value = composicao3, onValueChange = { composicao3 = it.uppercase() }, label = "3ª Composição", modifier = Modifier.weight(1f), readOnly = isReadOnly)
-                                }
-                            }
-                            Spacer(Modifier.height(12.dp))
-
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                FintechTextField(value = inspectionDate, onValueChange = { inspectionDate = it }, label = "Data/Hora", modifier = Modifier.weight(1f), readOnly = isReadOnly)
-                                FintechTextField(value = nextInspectionDate, onValueChange = { nextInspectionDate = it }, label = "Vencimento", modifier = Modifier.weight(1f), readOnly = isReadOnly)
+                                Text("$done/${keys.size}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                    }
-                }
-
-                checklist?.sections?.forEach { section ->
-                    item { SectionTitle(section.title) }
-                    items(section.items) { itemDesc ->
-                        val uniqueKey = "${section.id}|${section.title}|$itemDesc"
-                        ItemRow(
-                            itemName = itemDesc,
-                            selectedStatus = responses[uniqueKey] ?: "",
-                            isReadOnly = isReadOnly,
-                            onStatusSelected = { if(!isReadOnly) responses[uniqueKey] = it }
-                        )
-                    }
-                    item { Spacer(Modifier.height(16.dp)) }
-                }
-
-                item {
-                    SectionTitle("Conclusão")
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, CardBorder),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            FintechTextField(value = observacoes, onValueChange = { observacoes = it.uppercase() }, label = "Observações Gerais", singleLine = false, modifier = Modifier.height(100.dp), readOnly = isReadOnly)
-                            Spacer(Modifier.height(12.dp))
-                            FintechTextField(value = servicos, onValueChange = { servicos = it.uppercase() }, label = "Serviços Necessários", singleLine = false, modifier = Modifier.height(100.dp), readOnly = isReadOnly)
-
-                            Spacer(Modifier.height(16.dp))
-                            Text("Resultado Final", fontWeight = FontWeight.Bold, color = TextMuted, fontSize = 12.sp)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = statusFinal == "Liberado", onClick = { if(!isReadOnly) statusFinal = "Liberado" })
-                                Text("Liberado", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color(0xFF16A34A))
-                                Spacer(Modifier.width(16.dp))
-                                RadioButton(selected = statusFinal == "Não Liberado", onClick = { if(!isReadOnly) statusFinal = "Não Liberado" })
-                                Text("Não Liberado", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color(0xFFDC2626))
-                            }
-                        }
-                    }
-                }
-
-                if (!isReadOnly) {
-                    item {
-                        SectionTitle("Assinaturas")
-                        SignatureBox(if(isCavalo) "Motorista" else "Responsável", signatureDriver)
-                        Spacer(Modifier.height(16.dp))
-                        SignatureBox("Vistoriador", signatureInspector)
-                        Spacer(Modifier.height(32.dp))
-                    }
-
-                    item {
-                        Button(
-                            onClick = {
-                                val placaFinal = if (isCavalo) placa else composicao1
-                                if (placaFinal.isBlank() || transportadora.isBlank()) {
-                                    Toast.makeText(context, "Atenção: Placa e Transportadora são obrigatórios!", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-
-                                isSaving = true
-                                val inspetor = auth.currentUser?.displayName ?: "Inspetor Android"
-                                val base64Motorista = captureSignatureToBase64(signatureDriver.value)
-                                val base64Inspetor = captureSignatureToBase64(signatureInspector.value)
-
-                                val finalInspDate = try { sdf.parse(inspectionDate) ?: now.time } catch (e: Exception) { now.time }
-                                val finalNextDate = try { SimpleDateFormat("dd/MM/yyyy", BrLocale).parse(nextInspectionDate) ?: nextCal.time } catch (e: Exception) { nextCal.time }
-
-                                repository.salvarVistoria(
-                                    inspectionType = inspectionType, clientId = clientId, clientName = clientName.ifEmpty { "Cliente Avulso" },
-                                    placa = placaFinal, transportadora = transportadora, motorista = motorista,
-                                    marca = marca, modelo = modelo, km = km, composicao2 = composicao2, composicao3 = composicao3,
-                                    linkedCavaloPlate = linkedCavaloPlate, inspectionDate = finalInspDate, nextInspectionDate = finalNextDate,
-                                    respostas = responses, observacoes = observacoes, servicos = servicos, statusFinal = statusFinal,
-                                    assinaturaMotoristaBase64 = base64Motorista, assinaturaInspetorBase64 = base64Inspetor,
-                                    isCavalo = isCavalo,
-                                    tipoVeiculo = checklist?.title ?: if (isCavalo) "Inspeção Eletromecânica - Cavalo" else "Inspeção Eletromecânica - Implemento", inspectorName = inspetor,
-                                    onSuccess = { numero ->
-                                        isSaving = false
-                                        Toast.makeText(context, "Vistoria salva com sucesso!", Toast.LENGTH_LONG).show()
-                                        onNavigateBack()
-                                    },
-                                    onError = { erro ->
-                                        isSaving = false
-                                        Toast.makeText(context, "Erro no Servidor: $erro", Toast.LENGTH_LONG).show()
-                                    }
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth().height(60.dp), enabled = !isSaving,
-                            shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
-                        ) {
-                            if (isSaving) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                            else Text("SALVAR VISTORIA", fontWeight = FontWeight.Black, fontSize = 16.sp, letterSpacing = 1.sp)
-                        }
-                        Spacer(Modifier.height(40.dp))
-                    }
-                }
-            }
-        }
-    }
-}
-
-// =========================================================================
-// COMPONENTES COMPARTILHADOS (PÚBLICOS PARA TODO O APP ENXERGAR)
-// =========================================================================
-
-@Composable
-fun SectionTitle(title: String) {
-    Text(text = title.uppercase(), fontWeight = FontWeight.Black, fontSize = 13.sp, color = TextMuted, letterSpacing = 1.sp, modifier = Modifier.padding(bottom = 8.dp, start = 4.dp))
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun FintechTextField(value: String, onValueChange: (String) -> Unit, label: String, modifier: Modifier = Modifier, singleLine: Boolean = true, keyboardType: KeyboardType = KeyboardType.Text, readOnly: Boolean = false) {
-    OutlinedTextField(
-        value = value, onValueChange = onValueChange, label = { Text(label, fontWeight = FontWeight.SemiBold) },
-        modifier = modifier.fillMaxWidth(), singleLine = singleLine, readOnly = readOnly, keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        shape = RoundedCornerShape(12.dp), colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = InputBg, unfocusedContainerColor = InputBg,
-            focusedBorderColor = PrimaryBlue, unfocusedBorderColor = Color.Transparent,
-            focusedLabelColor = PrimaryBlue, unfocusedLabelColor = TextMuted,
-            focusedTextColor = TextDark, unfocusedTextColor = TextDark
-        )
-    )
-}
-
-@Composable
-fun SignatureBox(title: String, pathState: MutableState<Path>) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(title, fontWeight = FontWeight.Bold, color = TextDark)
-                Text("Limpar", color = Color.Red, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { pathState.value = Path() })
-            }
-            Spacer(Modifier.height(8.dp))
-            Box(modifier = Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(12.dp)).background(InputBg)) {
-                Canvas(modifier = Modifier.fillMaxSize().pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = { offset -> pathState.value.moveTo(offset.x, offset.y) },
-                        onDrag = { change, _ -> pathState.value.lineTo(change.position.x, change.position.y); val newPath = Path(); newPath.addPath(pathState.value); pathState.value = newPath }
                     )
-                }) { drawPath(path = pathState.value, color = Color.Black, style = Stroke(width = 6f)) }
+                }
+                items(section.items, key = { "${section.id}|$it" }) { itemDesc ->
+                    val uniqueKey = "${section.id}|${section.title}|$itemDesc"
+                    ChecklistItemCard(
+                        itemName = itemDesc,
+                        selected = responses[uniqueKey] ?: "",
+                        options = InspectionOptions,
+                        readOnly = isReadOnly,
+                        onSelect = { responses[uniqueKey] = it }
+                    )
+                }
             }
+
+            // --- CONCLUSÃO ---
+            item { SectionTitle("Conclusão", Modifier.padding(top = 8.dp)) }
+            item {
+                NexCard {
+                    NexTextField(value = observacoes, onValueChange = { observacoes = it.uppercase() }, label = "Observações gerais", singleLine = false, minLines = 3, readOnly = isReadOnly)
+                    Spacer(Modifier.height(12.dp))
+                    NexTextField(value = servicos, onValueChange = { servicos = it.uppercase() }, label = "Serviços necessários", singleLine = false, minLines = 3, readOnly = isReadOnly)
+                    Spacer(Modifier.height(16.dp))
+                    Text("Resultado final", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                    SegmentedChoice(
+                        options = listOf("Liberado" to "Liberado", "Não Liberado" to "Não liberado"),
+                        selected = statusFinal,
+                        onSelect = { statusFinal = it },
+                        enabled = !isReadOnly,
+                        toneOf = { toneFor(it) }
+                    )
+                }
+            }
+
+            // --- ASSINATURAS ---
+            if (!isReadOnly) {
+                item { SectionTitle("Assinaturas", Modifier.padding(top = 8.dp)) }
+                item { SignaturePad(if (isCavalo) "Motorista" else "Responsável", signatureDriver) }
+                item { SignaturePad("Vistoriador", signatureInspector) }
+            }
+            item { Spacer(Modifier.height(16.dp)) }
         }
     }
-}
-
-@Composable
-fun ItemRow(itemName: String, selectedStatus: String, isReadOnly: Boolean, onStatusSelected: (String) -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, CardBorder), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-        Column(Modifier.padding(16.dp)) {
-            Text(itemName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextDark)
-            Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                StatusButton("BOM", "bom", selectedStatus == "bom", Color(0xFF10B981), Modifier.weight(1f)) { if(!isReadOnly) onStatusSelected("bom") }
-                Spacer(Modifier.width(8.dp))
-                StatusButton("RUIM", "ruim", selectedStatus == "ruim", Color(0xFFEF4444), Modifier.weight(1f)) { if(!isReadOnly) onStatusSelected("ruim") }
-                Spacer(Modifier.width(8.dp))
-                StatusButton("N/A", "na", selectedStatus == "na", Color(0xFF94A3B8), Modifier.weight(1f)) { if(!isReadOnly) onStatusSelected("na") }
-            }
-        }
-    }
-}
-
-@Composable
-fun StatusButton(label: String, value: String, isSelected: Boolean, activeColor: Color, modifier: Modifier, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(containerColor = if (isSelected) activeColor else InputBg, contentColor = if (isSelected) Color.White else TextMuted),
-        shape = RoundedCornerShape(12.dp), modifier = modifier.height(44.dp), elevation = ButtonDefaults.buttonElevation(if(isSelected) 4.dp else 0.dp)
-    ) { Text(label, fontSize = 13.sp, fontWeight = FontWeight.Black) }
-}
-
-fun captureSignatureToBase64(path: androidx.compose.ui.graphics.Path): String {
-    if (path.isEmpty) return ""
-    val bounds = path.getBounds()
-    val padding = 40f
-    val width = (bounds.width + padding * 2).toInt()
-    val height = (bounds.height + padding * 2).toInt()
-    if (width <= 0 || height <= 0) return ""
-    val bitmap = androidx.core.graphics.createBitmap(width, height)
-    val canvas = android.graphics.Canvas(bitmap)
-    val paint = android.graphics.Paint().apply {
-        color = android.graphics.Color.BLACK
-        style = android.graphics.Paint.Style.STROKE
-        strokeWidth = 8f
-        isAntiAlias = true
-        strokeCap = android.graphics.Paint.Cap.ROUND
-        strokeJoin = android.graphics.Paint.Join.ROUND
-    }
-    // Copia para não deslocar a assinatura que está na tela (o transform altera o path)
-    val androidPath = android.graphics.Path(path.asAndroidPath())
-    val matrix = android.graphics.Matrix()
-    matrix.setTranslate(-bounds.left + padding, -bounds.top + padding)
-    androidPath.transform(matrix)
-    canvas.drawPath(androidPath, paint)
-    val outputStream = java.io.ByteArrayOutputStream()
-    bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outputStream)
-    val byteArray = outputStream.toByteArray()
-    return "data:image/png;base64," + android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
 }

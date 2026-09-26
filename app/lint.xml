@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- O AGP fica na maior versão suportada pelo Android Studio instalado (9.2.1).
+         Subir além disso faz o Studio recusar o projeto. -->
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+</lint>

@@ -12,6 +12,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.net.toUri
 import java.util.Date
@@ -95,3 +96,33 @@ fun Any?.asMapList(): List<Map<String, Any?>> =
 
 fun Any?.asStringList(): List<String> =
     (this as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+
+// Converte a assinatura desenhada em PNG base64 (formato usado pelo sistema web)
+fun captureSignatureToBase64(path: androidx.compose.ui.graphics.Path): String {
+    if (path.isEmpty) return ""
+    val bounds = path.getBounds()
+    val padding = 40f
+    val width = (bounds.width + padding * 2).toInt()
+    val height = (bounds.height + padding * 2).toInt()
+    if (width <= 0 || height <= 0) return ""
+    val bitmap = androidx.core.graphics.createBitmap(width, height)
+    val canvas = android.graphics.Canvas(bitmap)
+    val paint = android.graphics.Paint().apply {
+        color = android.graphics.Color.BLACK
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = 8f
+        isAntiAlias = true
+        strokeCap = android.graphics.Paint.Cap.ROUND
+        strokeJoin = android.graphics.Paint.Join.ROUND
+    }
+    // Copia para não deslocar a assinatura que está na tela (o transform altera o path)
+    val androidPath = android.graphics.Path(path.asAndroidPath())
+    val matrix = android.graphics.Matrix()
+    matrix.setTranslate(-bounds.left + padding, -bounds.top + padding)
+    androidPath.transform(matrix)
+    canvas.drawPath(androidPath, paint)
+    val outputStream = java.io.ByteArrayOutputStream()
+    bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outputStream)
+    val byteArray = outputStream.toByteArray()
+    return "data:image/png;base64," + android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+}
