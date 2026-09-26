@@ -170,18 +170,16 @@ private fun IncidentCard(inc: Map<String, Any>, sdf: SimpleDateFormat, onClick: 
             Spacer(Modifier.weight(1f))
             IncidentTypeTag(type)
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
         Text(inc["company"]?.toString() ?: "—", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text("Motorista: ${inc["driver"]?.toString() ?: "—"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Motorista: ${inc["driver"]?.toString() ?: "—"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
 
         val relato = inc["relato"]?.toString().orEmpty()
         if (relato.isNotBlank()) {
-            Spacer(Modifier.height(8.dp))
-            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) {
-                Text(relato, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(10.dp))
-            }
+            Spacer(Modifier.height(6.dp))
+            Text(relato, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(12.dp))
             Spacer(Modifier.width(4.dp))

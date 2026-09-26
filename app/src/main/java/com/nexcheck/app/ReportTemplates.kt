@@ -251,7 +251,7 @@ fun buildLogbookReportHtml(data: Map<String, Any>, logoBase64: String?): String 
 
     val cells =
         infoCell("Placa", plateHtml(data["plate"]), raw = true) +
-            infoCell("Composição", data["compositionType"]?.toString() ?: "PADRÃO") +
+            infoCell("Composição", compositionLabel(data["compositionType"])) +
             infoCell("Carroceria", data["bodyType"]?.toString() ?: "SIDER") +
             infoCell("Motorista", data["driverName"]?.toString() ?: "") +
             infoCell("Transportadora", data["carrier"]?.toString() ?: "") +

@@ -159,7 +159,7 @@ fun LogbookFormScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(16.dp))
                     Text("Composição", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
-                    SegmentedChoice(listOf("PADRÃO" to "Padrão", "BITREM" to "Bitrem"), type, { type = it })
+                    SegmentedChoice(listOf("PADRÃO" to "Padrão", "RODOTREM" to "Rodotrem"), type, { type = it })
 
                     Spacer(Modifier.height(16.dp))
                     Text("Carroceria", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

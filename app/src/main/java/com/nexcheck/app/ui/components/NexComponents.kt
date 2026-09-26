@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -44,7 +45,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.graphics.luminance
 import androidx.core.view.WindowCompat
+import coil.compose.AsyncImage
 import com.nexcheck.app.ui.theme.NexTheme
 
 // =========================================================================
@@ -127,6 +131,17 @@ fun FullScreenDetail(
         onDismissRequest = onClose,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
+        // O diálogo tem janela própria: aplica nela o contraste dos ícones da barra de status
+        val dialogView = LocalView.current
+        val darkIcons = MaterialTheme.colorScheme.background.luminance() > 0.5f
+        SideEffect {
+            (dialogView.parent as? DialogWindowProvider)?.window?.let { window ->
+                WindowCompat.getInsetsController(window, dialogView).apply {
+                    isAppearanceLightStatusBars = darkIcons
+                    isAppearanceLightNavigationBars = darkIcons
+                }
+            }
+        }
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
@@ -548,17 +563,23 @@ fun ChecklistItemCard(
 ) {
     val selectedTone = options.firstOrNull { it.value == selected }?.tone
     val accent = selectedTone?.let { toneColors(it).first }
-    NexCard(accent = accent, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
-        Text(itemName, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Compacto: nome à esquerda e as opções na mesma linha
+    NexCard(accent = accent, contentPadding = PaddingValues(start = 14.dp, end = 10.dp, top = 8.dp, bottom = 8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                itemName,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f).padding(end = 8.dp)
+            )
             options.forEach { option ->
                 val isSelected = option.value == selected
                 val fg = toneColors(option.tone).first
                 Box(
                     Modifier
-                        .weight(1f)
-                        .height(40.dp)
+                        .padding(start = 6.dp)
+                        .size(width = 52.dp, height = 36.dp)
                         .clip(MaterialTheme.shapes.small)
                         .background(if (isSelected) fg else MaterialTheme.colorScheme.surfaceVariant)
                         .border(1.dp, if (isSelected) fg else Color.Transparent, MaterialTheme.shapes.small)
@@ -567,7 +588,7 @@ fun ChecklistItemCard(
                 ) {
                     Text(
                         option.label.uppercase(),
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelSmall,
                         // surface = branco no tema claro / azul-noite no escuro: contrasta com o tom sólido
                         color = if (isSelected) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -692,6 +713,40 @@ fun PrimaryButton(
                 Spacer(Modifier.width(8.dp))
             }
             Text(text, style = MaterialTheme.typography.labelLarge, fontSize = 15.sp)
+        }
+    }
+}
+
+// =========================================================================
+// AVATAR (foto da conta Google ou iniciais)
+// =========================================================================
+
+@Composable
+fun UserAvatar(
+    photoUrl: String?,
+    initials: String,
+    size: Dp,
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer
+) {
+    Box(
+        modifier.size(size).clip(CircleShape).background(containerColor),
+        contentAlignment = Alignment.Center
+    ) {
+        // Iniciais ficam por baixo: aparecem enquanto a foto carrega ou se ela falhar
+        Text(
+            initials,
+            style = if (size >= 52.dp) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleSmall,
+            color = contentColor
+        )
+        if (!photoUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = photoUrl,
+                contentDescription = "Foto do perfil",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize()
+            )
         }
     }
 }

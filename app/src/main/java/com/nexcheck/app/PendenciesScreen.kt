@@ -33,6 +33,13 @@ private fun pendencyTone(status: String) = when (status) {
     else -> StatusTone.Success
 }
 
+private fun pendencyShortLabel(status: String) = when (status) {
+    "revistoria" -> "Revistoria"
+    "vencida" -> "Vencidas"
+    "avencer" -> "A vencer"
+    else -> "Em dia"
+}
+
 private fun pendencyGroupTitle(status: String) = when (status) {
     "revistoria" -> "Revistorias"
     "vencida" -> "Vencidas"
@@ -117,19 +124,15 @@ fun PendenciesScreen(
         ) {
             // --- CONTADORES (também funcionam como filtro) ---
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PendencyOrder.chunked(2).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            row.forEach { status ->
-                                CounterTile(
-                                    label = pendencyGroupTitle(status),
-                                    count = counts[status] ?: 0,
-                                    tone = pendencyTone(status),
-                                    selected = activeFilter == status,
-                                    modifier = Modifier.weight(1f)
-                                ) { activeFilter = if (activeFilter == status) "ALL" else status }
-                            }
-                        }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PendencyOrder.forEach { status ->
+                        CounterTile(
+                            label = pendencyShortLabel(status),
+                            count = counts[status] ?: 0,
+                            tone = pendencyTone(status),
+                            selected = activeFilter == status,
+                            modifier = Modifier.weight(1f)
+                        ) { activeFilter = if (activeFilter == status) "ALL" else status }
                     }
                 }
             }
@@ -162,8 +165,8 @@ private fun CounterTile(label: String, count: Int, tone: StatusTone, selected: B
         colors = CardDefaults.cardColors(containerColor = if (selected) bg else MaterialTheme.colorScheme.surface),
         border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) fg else MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-            Text(count.toString(), style = MaterialTheme.typography.headlineMedium, color = fg)
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
+            Text(count.toString(), style = MaterialTheme.typography.headlineSmall, color = fg)
             Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -184,62 +187,58 @@ private fun PendencyCard(
     val company = item["company"]?.toString() ?: item["clientName"]?.toString() ?: ""
     val motorista = item["driverName"]?.toString() ?: ""
     val cliente = item["clientName"]?.toString() ?: ""
-    val servicos = item["servicesNeeded"]?.toString() ?: "Vencimento de prazo"
+    val servicos = item["servicesNeeded"]?.toString()?.ifBlank { null } ?: "Vencimento de prazo"
 
     val ultimaData = (item["inspectionDate"] as? Timestamp)?.toDate()?.let { sdf.format(it) } ?: "—"
     val vencimentoStr = (item["_validadeJS"] as? Date)?.let { sdf.format(it) } ?: "—"
 
     val status = item["_statusNormalizado"]?.toString() ?: "emdia"
     val tone = pendencyTone(status)
-    val (toneFg, _) = toneColors(tone)
+    val toneFg = toneColors(tone).first
     val isReprovado = status == "revistoria"
     val acaoFinal = if (isReprovado) "Revistoria" else "Vistoria"
 
-    NexCard(accent = toneFg) {
+    NexCard(accent = toneFg, contentPadding = PaddingValues(start = 14.dp, end = 12.dp, top = 12.dp, bottom = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PlateTag(placa)
             Spacer(Modifier.weight(1f))
             StatusPill(item["_labelStatus"]?.toString() ?: "", tone)
         }
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth()) {
-            InfoItem("Transportadora", company.ifBlank { "N/A" }, Modifier.weight(1f))
-            InfoItem("Última inspeção", ultimaData, Modifier.weight(0.7f))
-        }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
+        Text(company.ifBlank { "Sem transportadora" }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (isReprovado) {
-            InfoItem("Motivo", servicos, valueColor = NexTheme.status.danger)
-        } else {
-            InfoItem("Vencimento", vencimentoStr, valueColor = toneFg, emphasize = true)
+            Text(servicos, style = MaterialTheme.typography.bodySmall, color = NexTheme.status.danger, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (isReprovado) "Última inspeção $ultimaData" else "Vence em $vencimentoStr",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isReprovado) MaterialTheme.colorScheme.onSurfaceVariant else toneFg,
+                fontWeight = if (isReprovado) null else androidx.compose.ui.text.font.FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
             if (status != "emdia") {
-                FilledTonalIconButton(
+                IconButton(
                     onClick = {
                         val msg = if (isReprovado) "🚨 *NEXCHECK - ALERTA DE REPROVAÇÃO* 🚨\n\nOlá, prezados *$company*,\nO conjunto/veículo placa *$placa* foi *REPROVADO*."
                         else "⚠️ *NEXCHECK - ALERTA DE VENCIMENTO* ⚠️\n\nA vistoria de *$placa* vence em breve."
                         openWhatsApp(context, msg)
                     },
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = NexTheme.status.dangerContainer,
-                        contentColor = NexTheme.status.danger
-                    ),
-                    modifier = Modifier.size(48.dp)
-                ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Avisar pelo WhatsApp") }
+                    modifier = Modifier.size(36.dp)
+                ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Avisar pelo WhatsApp", tint = NexTheme.status.danger, modifier = Modifier.size(18.dp)) }
             }
-            Button(
+            FilledTonalButton(
                 onClick = { onStartInspection("cavalo", placa, marca, modelo, company, motorista, cliente, acaoFinal) },
-                modifier = Modifier.weight(1f).height(48.dp),
-                shape = MaterialTheme.shapes.medium,
-                colors = if (isReprovado) ButtonDefaults.buttonColors(containerColor = NexTheme.status.revisit, contentColor = MaterialTheme.colorScheme.surface)
-                else ButtonDefaults.buttonColors()
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.height(36.dp),
+                colors = if (isReprovado) ButtonDefaults.filledTonalButtonColors(containerColor = NexTheme.status.revisitContainer, contentColor = NexTheme.status.revisit)
+                else ButtonDefaults.filledTonalButtonColors()
             ) {
-                Icon(if (isReprovado) Icons.Default.Refresh else Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(if (isReprovado) "Abrir revistoria" else "Iniciar vistoria", style = MaterialTheme.typography.labelLarge)
+                Icon(if (isReprovado) Icons.Default.Refresh else Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(if (isReprovado) "Revistoria" else "Vistoriar", style = MaterialTheme.typography.labelMedium)
             }
         }
     }
 }
+

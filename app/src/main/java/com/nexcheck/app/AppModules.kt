@@ -52,6 +52,7 @@ data class UserProfile(
     val name: String = "",
     val role: String = "inspector",
     val loaded: Boolean = false,
+    val photoUrl: String? = null,
     val permissions: Map<String, Boolean> = NexCheckLogic.defaultPermissions("inspector")
 ) {
     val roleDisplay: String
@@ -87,6 +88,8 @@ fun rememberUserProfile(uid: String?): UserProfile {
         if (uid == null) return@LaunchedEffect
         val auth = FirebaseAuth.getInstance()
         val fallbackName = auth.currentUser?.displayName ?: auth.currentUser?.email ?: "Usuário"
+        // Foto da conta Google (quando o login foi pelo Google); pede uma versão maior que a padrão (96px)
+        val photo = auth.currentUser?.photoUrl?.toString()?.replace("=s96-c", "=s256-c")
         FirebaseFirestore.getInstance().collection("users").document(uid).get()
             .addOnSuccessListener { doc ->
                 val role = (doc.getString("role") ?: "inspector").lowercase().trim()
@@ -94,11 +97,12 @@ fun rememberUserProfile(uid: String?): UserProfile {
                     name = doc.getString("name") ?: doc.getString("nome") ?: fallbackName,
                     role = role,
                     loaded = true,
+                    photoUrl = photo,
                     permissions = NexCheckLogic.effectivePermissions(role, doc.get("permissions"))
                 )
             }
             .addOnFailureListener {
-                profile = UserProfile(name = fallbackName, loaded = true)
+                profile = UserProfile(name = fallbackName, loaded = true, photoUrl = photo)
             }
     }
     return profile

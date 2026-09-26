@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FactCheck
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material3.*
@@ -234,15 +233,18 @@ private fun groupInspections(inspections: List<Map<String, Any>>): List<Inspecti
 @Composable
 private fun GroupCard(group: InspectionGroup, context: Context, onClick: () -> Unit) {
     val isLiberado = group.combinedStatus == "Liberado"
-    val (statusColor, _) = toneColors(toneFor(group.combinedStatus))
+    val statusColor = toneColors(toneFor(group.combinedStatus)).first
+    val main = group.cavalo ?: group.composicoes.firstOrNull()
     val cInfo = group.cavalo?.get("vehicleInfo") as? Map<*, *>
     val compInfo = group.composicoes.firstOrNull()?.get("vehicleInfo") as? Map<*, *>
 
     val placaPrincipal = cInfo?.get("placa")?.toString() ?: compInfo?.get("composicao1")?.toString() ?: "S/ CAVALO"
+    val transportadora = main?.get("company")?.toString()?.ifBlank { null } ?: group.clientName
+    val cliente = main?.get("clientName")?.toString().orEmpty()
     val dateStr = SimpleDateFormat("dd/MM/yyyy · HH:mm", BrLocale).format(group.groupDate)
     val compCount = group.composicoes.size
 
-    NexCard(onClick = onClick, accent = statusColor) {
+    NexCard(onClick = onClick, accent = statusColor, contentPadding = PaddingValues(start = 14.dp, end = 8.dp, top = 12.dp, bottom = if (isLiberado) 12.dp else 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PlateTag(placaPrincipal)
             if (compCount > 0) {
@@ -257,27 +259,22 @@ private fun GroupCard(group: InspectionGroup, context: Context, onClick: () -> U
                 }
             }
             Spacer(Modifier.weight(1f))
-            StatusPill(group.combinedStatus)
+            StatusPill(group.combinedStatus, Modifier.padding(end = 4.dp))
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
+        Text(transportadora.ifBlank { "Sem transportadora" }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    group.clientName.ifBlank { "Sem transportadora" },
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(2.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(12.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(dateStr, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+            Text(
+                listOf(cliente, dateStr).filter { it.isNotBlank() }.joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
             if (!isLiberado) {
                 WhatsAppButton {
-                    enviarWhatsApp(context, "reprovada", placaPrincipal, group.clientName, group.cavalo?.get("servicesNeeded")?.toString() ?: "Falha técnica")
+                    enviarWhatsApp(context, "reprovada", placaPrincipal, transportadora, group.cavalo?.get("servicesNeeded")?.toString() ?: "Falha técnica")
                 }
             }
         }
@@ -286,13 +283,9 @@ private fun GroupCard(group: InspectionGroup, context: Context, onClick: () -> U
 
 @Composable
 private fun WhatsAppButton(onClick: () -> Unit) {
-    FilledTonalButton(
+    TextButton(
         onClick = onClick,
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-        colors = ButtonDefaults.filledTonalButtonColors(
-            containerColor = com.nexcheck.app.ui.theme.NexTheme.status.dangerContainer,
-            contentColor = com.nexcheck.app.ui.theme.NexTheme.status.danger
-        )
+        colors = ButtonDefaults.textButtonColors(contentColor = com.nexcheck.app.ui.theme.NexTheme.status.danger)
     ) {
         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(14.dp))
         Spacer(Modifier.width(6.dp))

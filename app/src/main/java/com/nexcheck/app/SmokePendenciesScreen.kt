@@ -30,7 +30,7 @@ private fun smokeTone(status: String) = when (status) {
 }
 
 private fun smokeTitle(status: String) = when (status) {
-    "vencida" -> "Vencidas / reprovadas"
+    "vencida" -> "Vencidas"
     "avencer" -> "A vencer"
     else -> "Em dia"
 }
@@ -122,8 +122,8 @@ fun SmokePendenciesScreen(
                             colors = CardDefaults.cardColors(containerColor = if (selected) bg else MaterialTheme.colorScheme.surface),
                             border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) fg else MaterialTheme.colorScheme.outlineVariant)
                         ) {
-                            Column(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
-                                Text("${counts[status] ?: 0}", style = MaterialTheme.typography.headlineMedium, color = fg)
+                            Column(Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
+                                Text("${counts[status] ?: 0}", style = MaterialTheme.typography.headlineSmall, color = fg)
                                 Text(smokeTitle(status), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
                         }
@@ -148,36 +148,31 @@ private fun SmokeCard(item: Map<String, Any>, sdf: SimpleDateFormat, onNewSmokeI
     val placa = item["vehiclePlate"]?.toString() ?: "S/P"
     val company = item["companyName"]?.toString() ?: "N/A"
     val nivel = item["ringelmannValue"]?.toString()?.toIntOrNull() ?: 0
-    val resultado = item["result"]?.toString() ?: ""
     val vencimentoStr = (item["_validadeJS"] as? Date)?.let { sdf.format(it) } ?: "—"
     val tone = smokeTone(item["_statusNormalizado"]?.toString() ?: "emdia")
     val toneFg = toneColors(tone).first
 
-    NexCard(accent = toneFg) {
+    NexCard(accent = toneFg, contentPadding = PaddingValues(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PlateTag(placa)
             Spacer(Modifier.weight(1f))
-            StatusPill(item["_labelStatus"]?.toString() ?: "", tone)
+            StatusPill(item["_labelStatus"]?.toString() ?: "", tone, Modifier.padding(end = 4.dp))
         }
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth()) {
-            InfoItem("Transportadora", company, Modifier.weight(1f))
-            InfoItem("Nível", "$nivel (${nivel * 20}%)", Modifier.weight(0.6f))
-        }
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth()) {
-            InfoItem("Vencimento", vencimentoStr, Modifier.weight(1f), valueColor = toneFg, emphasize = true)
-            InfoItem("Último resultado", resultado, Modifier.weight(0.6f), valueColor = toneColors(toneFor(resultado)).first)
-        }
-        Spacer(Modifier.height(14.dp))
-        OutlinedButton(
-            onClick = { onNewSmokeInspection(placa, company) },
-            modifier = Modifier.fillMaxWidth().height(44.dp),
-            shape = MaterialTheme.shapes.medium
-        ) {
-            Icon(Icons.Default.Air, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Nova aferição", style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(8.dp))
+        Text(company, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Nível $nivel (${nivel * 20}%) · vence $vencimentoStr",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = { onNewSmokeInspection(placa, company) }) {
+                Icon(Icons.Default.Air, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Aferir", style = MaterialTheme.typography.labelMedium)
+            }
         }
     }
 }
+

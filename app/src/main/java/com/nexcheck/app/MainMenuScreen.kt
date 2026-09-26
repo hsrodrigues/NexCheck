@@ -125,12 +125,7 @@ fun MainMenuScreen(
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Box(
-                Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer).clickable(onClick = onOpenDrawer),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(profile.initials, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-            }
+            UserAvatar(profile.photoUrl, profile.initials, 44.dp, Modifier.clip(CircleShape).clickable(onClick = onOpenDrawer))
         }
 
         Spacer(Modifier.height(16.dp))

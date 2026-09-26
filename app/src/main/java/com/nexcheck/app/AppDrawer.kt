@@ -10,14 +10,13 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nexcheck.app.ui.components.SegmentedChoice
+import com.nexcheck.app.ui.components.UserAvatar
 import com.nexcheck.app.ui.theme.ThemeMode
 
 /** Menu lateral com perfil, todos os módulos liberados, aparência e sair. */
@@ -46,12 +45,13 @@ fun AppDrawer(
                     .padding(horizontal = 20.dp, vertical = 24.dp)
             ) {
                 Column {
-                    Box(
-                        Modifier.size(56.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(profile.initials, style = MaterialTheme.typography.titleLarge, color = Color.White)
-                    }
+                    UserAvatar(
+                        photoUrl = profile.photoUrl,
+                        initials = profile.initials,
+                        size = 56.dp,
+                        containerColor = Color.White.copy(alpha = 0.18f),
+                        contentColor = Color.White
+                    )
                     Spacer(Modifier.height(14.dp))
                     Text(
                         profile.name.ifBlank { "Carregando…" },

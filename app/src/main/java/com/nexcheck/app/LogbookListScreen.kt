@@ -11,7 +11,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FactCheck
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -114,7 +113,7 @@ fun LogbookListScreen(onBack: () -> Unit, onNewLogbook: () -> Unit) {
                     }
                     Spacer(Modifier.height(12.dp))
                     Row(Modifier.fillMaxWidth()) {
-                        InfoItem("Composição", data["compositionType"]?.toString() ?: "PADRÃO", Modifier.weight(1f))
+                        InfoItem("Composição", compositionLabel(data["compositionType"]), Modifier.weight(1f))
                         InfoItem("Carroceria", data["bodyType"]?.toString() ?: "SIDER", Modifier.weight(1f))
                     }
                 }
@@ -188,17 +187,15 @@ private fun LogbookCard(log: Map<String, Any>, sdf: SimpleDateFormat, onClick: (
             )
             StatusPill(status)
         }
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth()) {
-            InfoItem("Motorista", log["driverName"]?.toString() ?: "", Modifier.weight(1f))
-            InfoItem("Transportadora", log["carrier"]?.toString() ?: "", Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(12.dp))
-            Spacer(Modifier.width(4.dp))
-            Text(date?.let { sdf.format(it) } ?: "—", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+        Spacer(Modifier.height(10.dp))
+        Text(log["driverName"]?.toString() ?: "—", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            listOf(log["carrier"]?.toString().orEmpty(), date?.let { sdf.format(it) }.orEmpty()).filter { it.isNotBlank() }.joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -216,4 +213,14 @@ private fun printLogbookReport(context: Context, data: Map<String, Any>) {
         .addOnFailureListener {
             Toast.makeText(context, "Erro ao preparar impressão. Verifique a conexão.", Toast.LENGTH_SHORT).show()
         }
+}
+
+// Alguns registros antigos gravaram a carroceria no campo de composição
+internal fun compositionLabel(value: Any?): String {
+    val v = value?.toString()?.trim()?.uppercase().orEmpty()
+    return when {
+        v.isBlank() -> "PADRÃO"
+        v == "SIDER" || v == "GRADE BAIXA" -> "—"
+        else -> v
+    }
 }
