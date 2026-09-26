@@ -137,6 +137,6 @@ private fun DrawerItem(
         icon = { Icon(icon, contentDescription = null, tint = tint) },
         selected = false,
         onClick = onClick,
-        modifier = Modifier.padding(horizontal = 12.dp)
+        modifier = Modifier.padding(horizontal = 12.dp).height(48.dp)
     )
 }

@@ -52,19 +52,20 @@ import com.nexcheck.app.ui.theme.NexTheme
 // =========================================================================
 
 /**
- * Força a cor dos ícones da barra de status enquanto a tela estiver visível
- * (ex.: login com fundo escuro) e restaura o valor anterior ao sair.
+ * Define a cor dos ícones das barras do sistema (bateria, relógio, navegação).
+ * Chamado em um único lugar (NexCheckApp), que decide com base no tema,
+ * na tela atual e no menu lateral.
  */
 @Composable
-fun StatusBarIcons(darkIcons: Boolean) {
+fun SystemBarIcons(darkStatusIcons: Boolean, darkNavigationIcons: Boolean) {
     val view = LocalView.current
     if (view.isInEditMode) return
-    DisposableEffect(darkIcons) {
-        val window = (view.context as? Activity)?.window
-        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
-        val previous = controller?.isAppearanceLightStatusBars
-        controller?.isAppearanceLightStatusBars = darkIcons
-        onDispose { if (previous != null) controller.isAppearanceLightStatusBars = previous }
+    SideEffect {
+        val window = (view.context as? Activity)?.window ?: return@SideEffect
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = darkStatusIcons
+            isAppearanceLightNavigationBars = darkNavigationIcons
+        }
     }
 }
 

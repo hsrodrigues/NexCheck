@@ -23,6 +23,7 @@ import androidx.navigation.navArgument
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import androidx.activity.enableEdgeToEdge
+import com.nexcheck.app.ui.components.SystemBarIcons
 import com.nexcheck.app.ui.theme.NexCheckTheme
 import com.nexcheck.app.ui.theme.ThemeMode
 import com.nexcheck.app.ui.theme.ThemePreference
@@ -100,6 +101,12 @@ fun NexCheckApp(themeMode: ThemeMode, isDarkTheme: Boolean, onThemeChange: (Them
             launchSingleTop = true
         }
     }
+
+    // Ícones das barras do sistema sempre no contraste certo:
+    // claros no tema escuro, no login (fundo azul-noite) e com o menu aberto (cabeçalho azul)
+    val drawerOpen = drawerState.targetValue == DrawerValue.Open
+    val lightBackgroundOnTop = !isDarkTheme && currentRoute != "login" && !drawerOpen
+    SystemBarIcons(darkStatusIcons = lightBackgroundOnTop, darkNavigationIcons = !isDarkTheme && currentRoute != "login")
 
     ModalNavigationDrawer(
         drawerState = drawerState,

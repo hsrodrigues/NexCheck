@@ -42,7 +42,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import com.nexcheck.app.ui.components.NexTextField
 import com.nexcheck.app.ui.components.PrimaryButton
-import com.nexcheck.app.ui.components.StatusBarIcons
 import kotlinx.coroutines.launch
 
 @Composable
@@ -55,9 +54,6 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
     var isLoading by remember { mutableStateOf(false) }
 
     val auth = FirebaseAuth.getInstance()
-
-    // Fundo escuro: ícones da barra de status em branco enquanto esta tela estiver aberta
-    StatusBarIcons(darkIcons = false)
 
     // ID do cliente Web (OAuth) do projeto Firebase
     val webClientId = "1058312594915-9c4lsl1hua7qgi8cqfi4e6t61fqlmf66.apps.googleusercontent.com"
