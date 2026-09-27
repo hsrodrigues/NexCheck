@@ -17,3 +17,8 @@ local.properties
 /.idea
 # Chaves do Firebase: não versionar (baixe do Console do Firebase)
 app/google-services.json
+
+# Assinatura do release (senha e chave ficam fora do git)
+keystore.properties
+*.jks
+*.keystore
