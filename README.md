@@ -18,6 +18,10 @@
 
 ---
 
+## Download
+
+Baixe o APK mais recente em **[Releases](https://github.com/hsrodrigues/NexCheck/releases/latest)**. Para receber as atualizações automaticamente, adicione este repositório no [Obtainium](https://github.com/ImranR98/Obtainium).
+
 ## Sobre
 
 O **NexCheck** é um app Android para vistoriadores e equipes de frota. Com ele, a vistoria eletromecânica de cavalos mecânicos e carretas é feita no celular: checklist item a item, assinatura do motorista e do vistoriador, relatório pronto para imprimir e controle automático dos vencimentos.
@@ -92,7 +96,7 @@ Pré-requisitos: Android Studio recente (AGP 9.2) e JDK 17 ou superior (o JBR do
 
 1. Clone o repositório:
    ```bash
-   git clone https://github.com/<seu-usuario>/NexCheck.git
+   git clone https://github.com/hsrodrigues/NexCheck.git
    ```
 2. Crie um projeto no [Firebase Console](https://console.firebase.google.com/) com o pacote `com.nexcheck.app`, ative **Authentication** (Google e E-mail/Senha) e **Firestore**.
 3. Baixe o `google-services.json` e coloque em `app/google-services.json`. Esse arquivo não é versionado.
