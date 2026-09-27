@@ -1,12 +1,14 @@
 package com.nexcheck.app
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -225,6 +227,38 @@ fun InspectionScreen(
     val answered = allKeys.count { responses.containsKey(it) }
     val vehicleLabel = if (isCavalo) "Cavalo mecânico" else "Implemento / Carreta"
 
+    // Retrato do formulário logo após carregar (inclui o pré-preenchimento da revistoria),
+    // para só pedir confirmação ao sair se o usuário realmente alterou algo
+    fun formState(): List<Any> = listOf(
+        inspectionType, clientName, transportadora, placa, marca, modelo, motorista, km,
+        composicao1, composicao2, composicao3, linkedCavaloPlate, inspectionDate, nextInspectionDate,
+        observacoes, responses.toMap()
+    )
+    var initialState by remember { mutableStateOf<List<Any>?>(null) }
+    LaunchedEffect(isLoading) { if (!isLoading && initialState == null) initialState = formState() }
+    val hasChanges = !isReadOnly && initialState != null && (
+        formState() != initialState || !signatureDriver.value.isEmpty || !signatureInspector.value.isEmpty
+    )
+    var showDiscardDialog by remember { mutableStateOf(false) }
+    fun tryLeave() { if (hasChanges && !isSaving) showDiscardDialog = true else onNavigateBack() }
+    BackHandler(enabled = hasChanges && !isSaving) { showDiscardDialog = true }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            icon = { Icon(Icons.Default.DeleteOutline, contentDescription = null) },
+            title = { Text("Descartar vistoria?") },
+            text = { Text("Os dados preenchidos e os itens marcados no checklist serão perdidos.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardDialog = false
+                    onNavigateBack()
+                }) { Text("Descartar", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showDiscardDialog = false }) { Text("Continuar editando") } }
+        )
+    }
+
     fun salvar() {
         val placaFinal = if (isCavalo) placa else composicao1
         if (placaFinal.isBlank() || transportadora.isBlank()) {
@@ -269,7 +303,7 @@ fun InspectionScreen(
             else -> "Nova vistoria"
         },
         subtitle = vehicleLabel,
-        onBack = onNavigateBack,
+        onBack = { tryLeave() },
         bottomBar = {
             if (!isReadOnly && !isLoading) {
                 BottomActionBar {
